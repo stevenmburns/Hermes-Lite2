@@ -86,29 +86,18 @@ cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OU
     );
 
 
-//  Variable CIC filter - in width = out width = 14 bits, decimation rate = 2 to 16 
-//I channel
-varcic #(.STAGES(5), .IN_WIDTH(16), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
-  varcic_inst_I1(
+//  Variable CIC filter for the I and Q channels, comb state held in block RAM
+varcic_mem #(.STAGES(5), .IN_WIDTH(16), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
+  varcic_inst(
     .rst_all(rst_all),
     .clock(clock),
     .in_strobe(decimA_avail),
     .decimation(rate),
+    .in_i(decimA_real),
+    .in_q(decimA_imag),
     .out_strobe(decimB_avail),
-    .in_data(decimA_real),
-    .out_data(decimB_real)
-    );
-
-//Q channel
-varcic #(.STAGES(5), .IN_WIDTH(16), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
-  varcic_inst_Q1(
-    .rst_all(rst_all),
-    .clock(clock),
-    .in_strobe(decimA_avail),
-    .decimation(rate),
-    .out_strobe(),
-    .in_data(decimA_imag),
-    .out_data(decimB_imag)
+    .out_i(decimB_real),
+    .out_q(decimB_imag)
     );
 
 firX8R8 fir2 (
