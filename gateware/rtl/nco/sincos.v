@@ -21,7 +21,9 @@ logic   [9:0]   fine;
 logic   [1:0]   quadrant;
 assign {quadrant,coarse,fine} = angle;
 
+`ifndef USE_ALTSYNCRAM
 logic   [7:0]   coarse_addr;
+`endif
 wire    [7:0]   coarse_addr_d = quadrant[0] ? ~coarse : coarse;
 logic           sin_sign, cos_sign;
 
@@ -29,8 +31,10 @@ logic   [8:0]   fine_addr;
 logic           fine_sign;
 
 always @(posedge clk) begin
+`ifndef USE_ALTSYNCRAM
   coarse_addr <= coarse_addr_d;
-  sin_sign    <= quadrant[1] ? 1'b1 : 1'b0;
+`endif
+  sin_sign   <= quadrant[1] ? 1'b1 : 1'b0;
   cos_sign    <= (quadrant[1] ^ quadrant[0]) ? 1'b1 : 1'b0;
 
   fine_addr   <= fine[9] ? fine[8:0] : ~fine[8:0];
