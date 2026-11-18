@@ -208,6 +208,7 @@ module varcic_quad (
   //----------------------------------------------------------------------------
   reg [ACC_WIDTH-1:0] z   [0:7];
   reg [OUT_WIDTH-1:0] out [0:7];
+  wire [ACC_WIDTH-1:0] diff [0:3];
 
   integer k;
   initial for (k = 0; k < 8; k = k + 1) z[k] = {ACC_WIDTH{1'b0}};
@@ -222,18 +223,21 @@ module varcic_quad (
       reg  [ACC_WIDTH-1:0] a = {ACC_WIDTH{1'b0}};
       wire [ACC_WIDTH-1:0] q      = mem_q[(lane+1)*ACC_WIDTH-1:lane*ACC_WIDTH];
       wire [ACC_WIDTH-1:0] z_lane = z[{pair_sel, lane[1:0]}];
-      wire [ACC_WIDTH-1:0] diff   = a - q;
+
+      assign diff[lane] = a - q;
 
       assign wdata[(lane+1)*ACC_WIDTH-1:lane*ACC_WIDTH] =
-        (wsel == W_DIFF) ? diff :
+        (wsel == W_DIFF) ? diff[lane] :
         (wsel == W_Y0)   ? z_lane - q : z_lane;
 
-      always @(posedge clock) begin
-        if (latch_a) a <= q;
-        if (capture) out[{pair_sel, lane[1:0]}] <= rounded(diff);
-      end
+      always @(posedge clock) if (latch_a) a <= q;
     end
   endgenerate
+
+  integer j;
+  always @(posedge clock) begin
+    if (capture) for (j = 0; j < 4; j = j + 1) out[(pair_sel ? 4 : 0) + j] <= rounded(diff[j]);
+  end
 
   assign out_i0 = out[0];
   assign out_q0 = out[1];
