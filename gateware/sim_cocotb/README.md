@@ -58,10 +58,10 @@ and `pyfftw` are used by the DSP tests through `spectrum.py`/`hlmodel.py`
 (FFT spur measurement and plots).  The Ethernet tests import only `cocotb`.
 
 Three Ethernet benches instantiate Altera primitives and additionally need the
-Quartus simulation library `altera_mf.v`; their Makefiles reference it at a
-hardcoded path (`/home/shaynal/altera_lite/25.1std/quartus/eda/sim_lib/`).  If
-your Quartus lives elsewhere, edit that line in `eth_icmp/Makefile`,
-`eth_network/Makefile` and `eth_rgmii/Makefile`; every other test needs no
+Quartus simulation library `altera_mf.v`.  Their Makefiles look for it in
+`$(HOME)/altera_lite/25.1std/quartus/eda/sim_lib/`.  If your Quartus lives
+elsewhere, set `ALTERA_SIM_LIB` to that directory, for example
+`make ALTERA_SIM_LIB=/opt/quartus/eda/sim_lib`.  Every other test needs no
 Quartus at all.
 
 ## Running

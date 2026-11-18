@@ -1,4 +1,5 @@
 SIM ?= verilator
+ALTERA_SIM_LIB ?= $(HOME)/altera_lite/25.1std/quartus/eda/sim_lib
 TOPLEVEL_LANG ?= verilog
 PWD=$(shell pwd)
 TOPDIR=$(PWD)/../../rtl
@@ -27,7 +28,7 @@ VERILOG_SOURCES += $(TOPDIR)/ethernet/ddio_in.v
 VERILOG_SOURCES += $(TOPDIR)/ethernet/ddio_out.v
 VERILOG_SOURCES += $(TOPDIR)/ethernet/network.v
 # Altera megafunction simulation library (altddio_*, dcfifo)
-VERILOG_SOURCES += /home/shaynal/altera_lite/25.1std/quartus/eda/sim_lib/altera_mf.v
+VERILOG_SOURCES += $(ALTERA_SIM_LIB)/altera_mf.v
 # wrapper + MDIO PHY model
 VERILOG_SOURCES += $(PWD)/tb_network.v
 
@@ -36,6 +37,9 @@ TOPLEVEL = tb_network
 # --timing for the vendor models; the usual width/case lint waivers of this RTL
 COMPILE_ARGS += --timing -Wno-fatal -Wno-PROCASSWIRE -Wno-CASEINCOMPLETE \
                 -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC
+
+# Verilator 5.046 generates uncompilable C++ for the unused std::process class
+COMPILE_ARGS += --no-std-package
 
 GPI_IMPL := vpi
 
