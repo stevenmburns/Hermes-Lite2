@@ -152,7 +152,7 @@ module varcic_mem (
           z_i   <= integ_i[STAGES];
           z_q   <= integ_q[STAGES];
           bank  <= ~bank;
-          stage <= STAGES - 1;
+          stage <= STAGES[2:0] - 3'd1;
           state <= READ_A;
         end
         READ_A: state <= READ_B;
@@ -180,9 +180,9 @@ module varcic_mem (
   localparam GROWTH_2 = (CICRATE == 5) ? 22 : (CICRATE == 10 || CICRATE == 13) ? 15 : 18;
   localparam GROWTH_3 = (CICRATE == 5) ? 27 : (CICRATE == 10 || CICRATE == 13) ? 20 : 23;
 
-  localparam [5:0] DECIM_0 = (CICRATE == 5) ?  5 : (CICRATE == 10 || CICRATE == 13) ? 2 :  3;
-  localparam [5:0] DECIM_1 = (CICRATE == 5) ? 10 : (CICRATE == 10 || CICRATE == 13) ? 4 :  6;
-  localparam [5:0] DECIM_2 = (CICRATE == 5) ? 20 : (CICRATE == 10 || CICRATE == 13) ? 8 : 12;
+  localparam [5:0] DECIM_0 = (CICRATE == 5) ? 6'd5  : (CICRATE == 10 || CICRATE == 13) ? 6'd2 : 6'd3;
+  localparam [5:0] DECIM_1 = (CICRATE == 5) ? 6'd10 : (CICRATE == 10 || CICRATE == 13) ? 6'd4 : 6'd6;
+  localparam [5:0] DECIM_2 = (CICRATE == 5) ? 6'd20 : (CICRATE == 10 || CICRATE == 13) ? 6'd8 : 6'd12;
 
   localparam LSB_0 = IN_WIDTH + GROWTH_0 - OUT_WIDTH;
   localparam LSB_1 = IN_WIDTH + GROWTH_1 - OUT_WIDTH;
