@@ -234,9 +234,22 @@ module varcic_quad (
     end
   endgenerate
 
+  // Register the last comb stage before rounding, which splits the long path from
+  // the memory through the subtractors and rounding into two clocks.
+  reg [ACC_WIDTH-1:0] diff_r [0:3];
+  reg                 capture_d1 = 1'b0;
+  reg                 pair_d1_out = 1'b0;
+
   integer j;
   always @(posedge clock) begin
-    if (capture) for (j = 0; j < 4; j = j + 1) out[(pair_sel ? 4 : 0) + j] <= rounded(diff[j]);
+    capture_d1 <= capture;
+    if (capture) begin
+      pair_d1_out <= pair_sel;
+      for (j = 0; j < 4; j = j + 1) diff_r[j] <= diff[j];
+    end
+    if (capture_d1) begin
+      for (j = 0; j < 4; j = j + 1) out[(pair_d1_out ? 4 : 0) + j] <= rounded(diff_r[j]);
+    end
   end
 
   assign out_i0 = out[0];
