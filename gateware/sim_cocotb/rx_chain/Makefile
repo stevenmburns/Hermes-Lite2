@@ -7,6 +7,12 @@ PYTHON ?= python3
 # USE_ALTSYNCRAM selects the same ROM and RAM code paths as the production build.
 COMPILE_ARGS += +define+USE_ALTSYNCRAM=1
 
+# Set VARCIC_QUAD=1 to test the variable CIC shared by all four receivers
+ifneq ($(VARCIC_QUAD),)
+COMPILE_ARGS += +define+VARCIC_QUAD=1
+SIM_BUILD = sim_build_quad
+endif
+
 VERILOG_SOURCES += $(PWD)/tb_rx_chain.sv
 VERILOG_SOURCES += $(PWD)/altsyncram_model.v
 VERILOG_SOURCES += $(TOPDIR)/nco/mix2.v
@@ -19,6 +25,7 @@ VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic_comb.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic_integrator.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/varcic_mem.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/varcic_quad.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firfilt.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firram36.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firrom/firromH.v

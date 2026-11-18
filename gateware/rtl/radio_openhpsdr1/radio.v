@@ -186,6 +186,15 @@ logic signed [17:0]   mixdata_q [0:9];
 logic [3:0] nco_index;
 
 logic [33:0] debug;
+`ifdef VARCIC_QUAD
+// VARCIC_QUAD supports NR <= 4; channels above NR read as zero.
+wire               quad_cic_strobe [0:9];
+wire signed [15:0] quad_cic_i      [0:9];
+wire signed [15:0] quad_cic_q      [0:9];
+wire               quad_var_strobe;
+wire signed [15:0] quad_var_i      [0:9];
+wire signed [15:0] quad_var_q      [0:9];
+`endif
 
 logic [5:0]  synced_receivers   = 6'h00;
 
@@ -518,6 +527,15 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
           .out_data_I(rx0_out_I),
           .out_data_Q(rx0_out_Q),
           .debug(debug)
+`ifdef VARCIC_QUAD
+          ,
+          .cic_strobe(quad_cic_strobe[0]),
+          .cic_i(quad_cic_i[0]),
+          .cic_q(quad_cic_q[0]),
+          .var_strobe(quad_var_strobe),
+          .var_i(quad_var_i[0]),
+          .var_q(quad_var_q[0])
+`endif
         );
       end else begin : CHN
         receiver_nco #(
@@ -533,11 +551,39 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
           .out_strobe(rx_data_rdy[c]),
           .out_data_I(rx_data_i[c]),
           .out_data_Q(rx_data_q[c])
+`ifdef VARCIC_QUAD
+          ,
+          .cic_strobe(quad_cic_strobe[c]),
+          .cic_i(quad_cic_i[c]),
+          .cic_q(quad_cic_q[c]),
+          .var_strobe(quad_var_strobe),
+          .var_i(quad_var_i[c]),
+          .var_q(quad_var_q[c])
+`endif
         );
       end
     end
 
   endgenerate
+
+`ifdef VARCIC_QUAD
+  // One variable CIC serves up to four receivers from a shared block RAM.
+  varcic_quad #(.CICRATE(CICRATE)) shared_varcic (
+    .rst_all(rst_all),
+    .clock(clk),
+    .in_strobe(quad_cic_strobe[0]),
+    .decimation(rate),
+    .in_i0(quad_cic_i[0]), .in_q0(quad_cic_q[0]),
+    .in_i1(quad_cic_i[1]), .in_q1(quad_cic_q[1]),
+    .in_i2(quad_cic_i[2]), .in_q2(quad_cic_q[2]),
+    .in_i3(quad_cic_i[3]), .in_q3(quad_cic_q[3]),
+    .out_strobe(quad_var_strobe),
+    .out_i0(quad_var_i[0]), .out_q0(quad_var_q[0]),
+    .out_i1(quad_var_i[1]), .out_q1(quad_var_q[1]),
+    .out_i2(quad_var_i[2]), .out_q2(quad_var_q[2]),
+    .out_i3(quad_var_i[3]), .out_q3(quad_var_q[3])
+  );
+`endif
 
   // Tie off the unused RX channel array entries (NR..9) so that every entry
   // has a driver. The output mux only selects channels 0..last_chan, so these

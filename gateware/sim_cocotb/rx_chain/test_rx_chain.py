@@ -21,6 +21,10 @@ TONE_STEP_HZ = FS / STIM_LEN
 SETTLE_OUTPUTS = 140
 SAMPLE_RATES = (48_000, 96_000, 192_000, 384_000)
 
+# Default tuning for the second mixer (channels 2 and 3)
+PHI2 = int(round(10_136_000 * 2**32 / FS))
+PHI3 = int(round(18_100_000 * 2**32 / FS))
+
 # Limits sit a few dB outside the values measured on a correctly aligned chain.
 IMAGE_LIMIT_DBC = -100.0
 SPUR_LIMIT_DBC = -90.0
@@ -50,13 +54,15 @@ def noise(seed):
     return np.random.default_rng(seed).integers(-2048, 2048, STIM_LEN)
 
 
-async def start(dut, stimulus, phi0, phi1, sample_rate):
+async def start(dut, stimulus, phi0, phi1, sample_rate, phi2=PHI2, phi3=PHI3):
     with open("stim.mem", "w") as f:
         f.writelines(f"{int(v) & 0xFFF:03x}\n" for v in stimulus)
     dut.rst.value = 1
     dut.load_stim.value = 0
     dut.phi0.value = phi0
     dut.phi1.value = phi1
+    dut.phi2.value = phi2
+    dut.phi3.value = phi3
     dut.rate.value = model.RATE_FOR_SPS[sample_rate]
     await Timer(1, "ns")
     dut.load_stim.value = 1
@@ -65,17 +71,19 @@ async def start(dut, stimulus, phi0, phi1, sample_rate):
     dut.rst.value = 0
 
 
-async def capture(dut, stimulus, phi0, phi1, sample_rate, outputs):
-    """Return (ch0_i, ch0_q, ch1_i, ch1_q) rows for each output after reset."""
-    await start(dut, stimulus, phi0, phi1, sample_rate)
-    rows = np.zeros((outputs, 4), dtype=np.int64)
+async def capture(dut, stimulus, phi0, phi1, sample_rate, outputs, phi2=PHI2, phi3=PHI3):
+    """Return I and Q of all four channels for each output after reset."""
+    await start(dut, stimulus, phi0, phi1, sample_rate, phi2, phi3)
+    rows = np.zeros((outputs, 8), dtype=np.int64)
     clocks = np.zeros(outputs, dtype=np.int64)
     for k in range(outputs):
         await RisingEdge(dut.out_strobe)
         await FallingEdge(dut.clk)
         clocks[k] = int(dut.clk_count.value)
         rows[k] = (dut.ch0_i.value.to_signed(), dut.ch0_q.value.to_signed(),
-                   dut.ch1_i.value.to_signed(), dut.ch1_q.value.to_signed())
+                   dut.ch1_i.value.to_signed(), dut.ch1_q.value.to_signed(),
+                   dut.ch2_i.value.to_signed(), dut.ch2_q.value.to_signed(),
+                   dut.ch3_i.value.to_signed(), dut.ch3_q.value.to_signed())
     expected_period = FS // sample_rate
     periods = set(np.diff(clocks).tolist())
     assert periods == {expected_period}, (
@@ -177,7 +185,7 @@ async def test_mixer_outputs_bit_exact(dut):
 
 @cocotb.test()
 async def test_receiver_bit_exact_at_every_rate(dut):
-    """Noise through both channels must match the model at all four sample rates."""
+    """Noise through all four channels must match the model at every sample rate."""
     stimulus = noise(22)
     phi0, phi1 = phase_word(7_074_000), phase_word(14_074_000)
     for sample_rate in SAMPLE_RATES:
@@ -185,22 +193,29 @@ async def test_receiver_bit_exact_at_every_rate(dut):
         rows = await capture(dut, stimulus, phi0, phi1, sample_rate, outputs)
         assert_matches_model(rows, stimulus, phi0, sample_rate, 0, f"{sample_rate} sps")
         assert_matches_model(rows, stimulus, phi1, sample_rate, 1, f"{sample_rate} sps")
+        assert_matches_model(rows, stimulus, PHI2, sample_rate, 2, f"{sample_rate} sps")
+        assert_matches_model(rows, stimulus, PHI3, sample_rate, 3, f"{sample_rate} sps")
         assert np.any(rows[SETTLE_OUTPUTS:] != 0), "receiver produced only zeros"
-        dut._log.info(f"{sample_rate} sps: 500 outputs bit-exact on both channels")
+        dut._log.info(f"{sample_rate} sps: 500 outputs bit-exact on all four channels")
 
 
 @cocotb.test()
 async def test_channels_are_independent(dut):
-    """Retuning channel 1 must not change one output bit of channel 0."""
+    """Retuning channels 1 and 3 must not change one output bit of channels 0 and 2."""
     stimulus = noise(23)
     phi0 = phase_word(7_074_000)
     outputs = SETTLE_OUTPUTS + 300
     first = await capture(dut, stimulus, phi0, phase_word(3_573_000), 192_000, outputs)
-    second = await capture(dut, stimulus, phi0, phase_word(21_074_000), 192_000, outputs)
-    changed = np.count_nonzero(first[SETTLE_OUTPUTS:, :2] != second[SETTLE_OUTPUTS:, :2])
-    assert changed == 0, f"retuning channel 1 changed {changed} channel 0 output words"
-    moved = np.count_nonzero(first[SETTLE_OUTPUTS:, 2:] != second[SETTLE_OUTPUTS:, 2:])
-    assert moved > 0, "channel 1 did not respond to retuning"
+    second = await capture(dut, stimulus, phi0, phase_word(21_074_000), 192_000, outputs,
+                           phi3=phase_word(1_840_000))
+    settled_first, settled_second = first[SETTLE_OUTPUTS:], second[SETTLE_OUTPUTS:]
+    for held, retuned in ((0, 1), (2, 3)):
+        columns = [2 * held, 2 * held + 1]
+        changed = np.count_nonzero(settled_first[:, columns] != settled_second[:, columns])
+        assert changed == 0, f"retuning channel {retuned} changed {changed} channel {held} words"
+        columns = [2 * retuned, 2 * retuned + 1]
+        moved = np.count_nonzero(settled_first[:, columns] != settled_second[:, columns])
+        assert moved > 0, f"channel {retuned} did not respond to retuning"
 
 
 @cocotb.test()

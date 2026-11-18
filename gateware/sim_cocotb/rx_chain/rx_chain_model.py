@@ -36,7 +36,7 @@ VARCIC_GROWTH = {5: 12, 10: 17, 20: 22, 40: 27}
 
 # Register delays, in ADC clocks, from clk_count to the (ADC sample, NCO phase)
 # that reach each mixer output in tb_rx_chain.sv.
-MIXER_DELAYS = {0: (2, 3), 1: (3, 4)}
+MIXER_DELAYS = {0: (2, 3), 1: (3, 4), 2: (2, 3), 3: (3, 4)}
 
 
 def signed(values, width):

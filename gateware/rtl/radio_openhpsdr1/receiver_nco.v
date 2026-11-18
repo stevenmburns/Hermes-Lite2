@@ -40,6 +40,16 @@ module receiver_nco(
   output reg [23:0] out_data_I,
   output reg [23:0] out_data_Q,
   output [33:0] debug
+`ifdef VARCIC_QUAD
+  ,
+  // The variable CIC is shared by all receivers and lives in radio.v
+  output cic_strobe,
+  output signed [15:0] cic_i,
+  output signed [15:0] cic_q,
+  input  var_strobe,
+  input  signed [15:0] var_i,
+  input  signed [15:0] var_q
+`endif
   );
 
   parameter CICRATE = 5;
@@ -86,6 +96,14 @@ cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OU
     );
 
 
+`ifdef VARCIC_QUAD
+assign cic_strobe   = decimA_avail;
+assign cic_i        = decimA_real;
+assign cic_q        = decimA_imag;
+assign decimB_avail = var_strobe;
+assign decimB_real  = var_i;
+assign decimB_imag  = var_q;
+`else
 //  Variable CIC filter for the I and Q channels, comb state held in block RAM
 varcic_mem #(.STAGES(5), .IN_WIDTH(16), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
   varcic_inst(
@@ -99,6 +117,7 @@ varcic_mem #(.STAGES(5), .IN_WIDTH(16), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16),
     .out_i(decimB_real),
     .out_q(decimB_imag)
     );
+`endif
 
 firX8R8 fir2 (
   .rst_all(rst_all),

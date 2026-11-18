@@ -13,6 +13,7 @@ set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/cic_comb.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/cic_integrator.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/varcic.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/varcic_mem.v
+set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/varcic_quad.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/firfilt.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/firram36.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/firrom/firromH.v
