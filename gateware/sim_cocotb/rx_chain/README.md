@@ -12,15 +12,16 @@ One `mix2` serves two `receiver_nco` channels, wired as in `radio.v`. Unlike the
 `rx1`, `rx2` and `rx2iq` benches, it compiles the `USE_ALTSYNCRAM` code paths used
 by the production build and reads the production `.mif` ROM files.
 
-## Current status: 4 of 8 tests fail on this branch
+## Coarse ROM latency regression
 
-`rtl/nco/coarserom.v` sets `outdata_reg_a = "CLOCK0"`, which gives the coarse sine
-ROM two clocks of read latency. `sincos.v` is pipelined for one clock, as the
-inferred ROM had before commit `7d3b4a2`. The coarse magnitude therefore arrives one
-`clk_2x` cycle late, and because `mix2` interleaves two channels on that clock, it
-belongs to the other receiver channel.
+This bench found a regression from commit `7d3b4a2`, which set
+`outdata_reg_a = "CLOCK0"` in `rtl/nco/coarserom.v`. That gave the coarse sine ROM
+two clocks of read latency, while `sincos.v` is pipelined for one, as the inferred
+ROM had before that commit. The coarse magnitude arrived one `clk_2x` cycle late,
+and because `mix2` interleaves two channels on that clock, it belonged to the other
+receiver channel. The ROM output is now unregistered.
 
-| Measurement | This branch | With `outdata_reg_a = "UNREGISTERED"` |
+| Measurement | With `"CLOCK0"` | With `"UNREGISTERED"` (current) |
 | --- | --- | --- |
 | Tests passing | 4 of 8 | 8 of 8 |
 | Mixer samples matching the model | 16 of 3800 | 3800 of 3800 |
@@ -29,9 +30,10 @@ belongs to the other receiver channel.
 | Response at 5x the tuned frequency | -14.0 dB | no output |
 | Retuning channel 1 changes channel 0 | yes | no |
 
-The gain and harmonic levels are those of a square-wave local oscillator. This has
-been shown in simulation only, using `altsyncram_model.v` rather than Intel's
-`altera_mf.v`, and has not been measured on hardware.
+The gain and harmonic levels are those of a square-wave local oscillator. Both the
+regression and the fix have been shown in simulation only, using
+`altsyncram_model.v` rather than Intel's `altera_mf.v`, and have not been measured
+on hardware.
 
 ## Tests
 
