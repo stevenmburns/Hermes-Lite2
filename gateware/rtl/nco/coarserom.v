@@ -61,9 +61,9 @@ module coarserom (
     altsyncram_component.numwords_a = 256,
     altsyncram_component.operation_mode = "ROM",
     altsyncram_component.outdata_aclr_a = "NONE",
-    // One clock of read latency (the registered address only). sincos.v delays
-    // the sign and fine-angle bits to match, so this must not be "CLOCK0".
-    altsyncram_component.outdata_reg_a = "UNREGISTERED",
+    // Two clocks of read latency. sincos.v connects the unregistered address
+    // here, so the M9K address register replaces its coarse_addr flop.
+    altsyncram_component.outdata_reg_a = "CLOCK0",
     altsyncram_component.widthad_a = 8,
     altsyncram_component.width_a = 36,
     altsyncram_component.width_byteena_a = 1;

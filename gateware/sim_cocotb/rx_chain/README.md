@@ -19,9 +19,11 @@ This bench found a regression from commit `7d3b4a2`, which set
 two clocks of read latency, while `sincos.v` is pipelined for one, as the inferred
 ROM had before that commit. The coarse magnitude arrived one `clk_2x` cycle late,
 and because `mix2` interleaves two channels on that clock, it belonged to the other
-receiver channel. The ROM output is now unregistered.
+receiver channel. `sincos.v` now drives the ROM with the unregistered address, so
+the M9K address register replaces the `coarse_addr` flop and the output stays
+registered.
 
-| Measurement | With `"CLOCK0"` | With `"UNREGISTERED"` (current) |
+| Measurement | Regression | Corrected latency (current) |
 | --- | --- | --- |
 | Tests passing | 4 of 8 | 8 of 8 |
 | Mixer samples matching the model | 16 of 3800 | 3800 of 3800 |

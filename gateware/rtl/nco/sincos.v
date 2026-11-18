@@ -22,13 +22,14 @@ logic   [1:0]   quadrant;
 assign {quadrant,coarse,fine} = angle;
 
 logic   [7:0]   coarse_addr;
+wire    [7:0]   coarse_addr_d = quadrant[0] ? ~coarse : coarse;
 logic           sin_sign, cos_sign;
 
 logic   [8:0]   fine_addr;
 logic           fine_sign;
 
 always @(posedge clk) begin
-  coarse_addr <= quadrant[0] ? ~coarse : coarse;
+  coarse_addr <= coarse_addr_d;
   sin_sign    <= quadrant[1] ? 1'b1 : 1'b0;
   cos_sign    <= (quadrant[1] ^ quadrant[0]) ? 1'b1 : 1'b0;
 
@@ -53,11 +54,13 @@ assign coarse_sinp[18] = coarse_sinp18;
 assign coarse_cosp[18] = coarse_cosp18;
 
 `ifdef USE_ALTSYNCRAM
+// The M9K address register takes the place of the coarse_addr flop.
 coarserom #(.init_file("sincos_coarse.mif")) coarserom_i (
+  .address(coarse_addr_d),
 `else
 coarserom #(.init_file("sincos_coarse.txt")) coarserom_i (
-`endif
   .address(coarse_addr),
+`endif
   .clock(clk),
   .q({coarse_sinp[17:0],coarse_cosp[17:0]})
 );
