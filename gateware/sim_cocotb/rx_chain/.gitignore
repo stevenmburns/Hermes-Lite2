@@ -1,0 +1,4 @@
+# ROM images converted from the production .mif files by mif2mem.py
+*.mif
+rom_images.stamp
+stim.mem

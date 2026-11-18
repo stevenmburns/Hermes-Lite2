@@ -19,6 +19,10 @@ DSP blocks), `spectrum.py` (FFT spur/noise measurement helpers used for the
 DSP pass/fail margins), and `ethcommon.py` (byte-level TX/RX stream drivers
 shared by the Ethernet benches).
 
+`rx_chain` is a further testbench for the production receive path of
+`hl2b5up_main`.  It currently fails on this branch because of a coarse NCO ROM
+latency problem; see `rx_chain/README.md`.
+
 ## Setting up the environment
 
 Two things must be on `PATH`: a Python with cocotb installed, and Verilator
