@@ -41,6 +41,16 @@ regressions rather than prove a specification.
 Twelve hand-made mutations were each caught. Six in `CicInterpM5.v` failed only
 the CIC check. Six in the FIR, its ROM latency and its RAM latency failed both.
 
+## Block-RAM comb
+
+`hl2b5up_main` builds with `TX_CIC_MEM`, which replaces `CicInterpM5` with
+`rtl/radio_openhpsdr1/CicInterpM5Mem.v`. The integrators stay in registers. The
+comb state moves into one M9K, and a single subtractor computes the ten comb
+values serially, in 46 of the 200 clocks between input samples. Both versions
+pass every test here with the same model. Of 11 mutations in the new module, 10
+were caught. The survivor writes the comb results to the wrong bank, which
+negates comb stages 1 to 4, and the four negations cancel exactly.
+
 ## Notes on the FIR
 
 * The passband is about +/-15 kHz. A tone at -18.9 kHz comes out 1.6 dB low.
@@ -55,7 +65,8 @@ Activate an environment with cocotb and numpy, then:
 
 ```sh
 cd gateware/sim_cocotb/tx_chain
-make
+make                # block-RAM comb, as built for hl2b5up_main
+make TX_CIC_MEM=    # register version, CicInterpM5.v
 ```
 
 A run takes about 25 seconds from clean. Quartus is not required.

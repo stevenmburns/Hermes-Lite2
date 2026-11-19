@@ -8,12 +8,22 @@ PYTHON ?= python3
 # USE_ALTSYNCRAM selects the same ROM and RAM code paths as the production build.
 COMPILE_ARGS += +define+USE_ALTSYNCRAM=1
 
+# hl2b5up_main keeps the TX CIC combs in block RAM.  Run with TX_CIC_MEM=
+# (empty) to test the register version, CicInterpM5.v, instead.
+TX_CIC_MEM ?= 1
+ifneq ($(TX_CIC_MEM),)
+COMPILE_ARGS += +define+TX_CIC_MEM=1
+else
+SIM_BUILD = sim_build_reg
+endif
+
 VERILOG_SOURCES += $(PWD)/tb_tx_chain.sv
 VERILOG_SOURCES += $(RXCHAIN)/altsyncram_model.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/FirInterp8_1024.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firram36I_1024.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firrom/firromI_1024.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/CicInterpM5.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/CicInterpM5Mem.v
 
 TOPLEVEL = tb_tx_chain
 
