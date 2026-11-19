@@ -157,7 +157,7 @@ module CicInterpM5Mem(
             mem_q2 <= mem_q;
             if (wen) comb_mem[waddr] <= wdata;
             if (processing) begin
-                if (!pstep[0]) a_reg <= mem_q2;
+                a_reg <= mem_q2;    // A on even steps; the odd-step reload is unused
                 if (pstep[0] && pstage == 3'd4) begin
                     if (pchan) x5n_imag <= diff;
                     else       x5n_real <= diff;
