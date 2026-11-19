@@ -5,3 +5,5 @@ stim.mem
 # Raw captures written by tb_tx_chain.sv
 cic_out.bin
 fir_out.bin
+up_out.bin
+sim_build_nco/

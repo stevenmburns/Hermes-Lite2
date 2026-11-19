@@ -1013,7 +1013,13 @@ assign tx_q = (vna | tx_cw_key) ? 16'h0 : y2_r;                   // taking into
 
 
 // NOTE:  I and Q inputs reversed to give correct sideband out
+`ifdef TX_NCO
+// sincos NCO and multipliers in place of the CORDIC: same gain, delay and phase,
+// not bit-exact (see sim_cocotb/tx_chain).
+tx_nco_upconv cordic_inst (
+`else
 cpl_cordic #(.OUT_WIDTH(16)) cordic_inst (
+`endif
   .clock(clk),
   .frequency(tx0_phase),
   .in_data_I(tx_i),
