@@ -3,7 +3,7 @@
 // Same ports, parameters and output, bit for bit, as CicInterpM5.v. The five
 // integrators per channel still run on every enabled clock in registers. The
 // combs run once every RRRR enabled clocks, so their state moves into a
-// 64 x LO RAM (one M9K) and one LO-bit subtractor computes them serially.
+// 32 x CW RAM (one M9K) and one subtractor computes them serially.
 //
 // CicInterpM5's comb is pipelined: after comb event k,
 //   x0(k) = input sampled at event k
@@ -12,17 +12,19 @@
 // for s >= 1 depends only on values from earlier events, so this version
 // computes them in the gap after event k-1 and keeps x5(k) ready in x5n.
 //
-// RAM address {channel, stage[2:0], bank, half}: xs(k) is stored in bank k % 2,
-// and each CBITS-wide value is split into a low half of LO bits and a high half
-// of HI bits. After each event the sequencer
-//   steps 0..3    writes the new x0 (I low, I high, Q low, Q high)
-//   steps 4..43   issues 40 reads, 4 per (stage, channel) for stages 4 down to 0:
-//                 A low = xs(k), B low = xs(k-1), A high, B high
-//   steps 6..45   gets each read back two steps later and writes A - B
-//                 (low half first, keeping the borrow) to x(s+1) in the other
-//                 bank, or to x5n for stage 4
+// Each stage grows the IBITS-bit input by at most one bit, so every xs fits in
+// CW = IBITS + 5 signed bits. Computing modulo 2^CW and sign-extending x5 gives
+// the same integrator input as CicInterpM5's CBITS-wide combs.
+//
+// RAM address {channel, stage[2:0], bank}: xs(k) is stored in bank k % 2.
+//   event edge    writes the new I x0 to the bank for event k, and keeps Q
+//   step 0        writes the new Q x0
+//   steps 1..20   issue 20 reads, 2 per (stage, channel) for stages 4 down to
+//                 0: A = xs(k), then B = xs(k-1)
+//   steps 3..22   get each read back two steps later and write A - B to
+//                 x(s+1) in the other bank, or to x5n for stage 4
 // Stages run high to low, so each write replaces a value its own stage has
-// already read. The sequence ends at step 45, so RRRR must be at least 47
+// already read. The sequence ends at step 22, so RRRR must be at least 24
 // (production uses 160 to 208).
 
 module CicInterpM5Mem(
@@ -40,9 +42,8 @@ module CicInterpM5Mem(
     parameter OBITS = 16;       // output bits
     parameter GBITS = 34;       // growth bits: growth is R**M / R
     localparam CBITS = IBITS + GBITS;   // calculation bits
-    localparam LO = (CBITS + 1) / 2;    // low half, also the RAM width
-    localparam HI = CBITS - LO;         // high half
-    localparam LAST_STEP = 45;
+    localparam CW = IBITS + 5;          // comb width: one bit of growth per stage
+    localparam LAST_STEP = 22;
 
     reg [8:0] counter = 9'd0;
     wire event_now = (counter == RRRR - 1);
@@ -50,18 +51,14 @@ module CicInterpM5Mem(
     // ------------------------------------------------------------ integrators
     reg signed [CBITS-1:0] y1 = 0, y2 = 0, y3 = 0, y4 = 0, y5 = 0;
     reg signed [CBITS-1:0] s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0;
-    reg [LO-1:0] x5n_lo [0:1];
-    reg [HI-1:0] x5n_hi [0:1];
+    reg signed [CW-1:0] x5n_real = 0, x5n_imag = 0;
     reg fire = 1'b0;    // the enabled clock after an event, when x5 is nonzero
 
-    initial begin
-        req = 1'b0;
-        x5n_lo[0] = 0; x5n_lo[1] = 0;
-        x5n_hi[0] = 0; x5n_hi[1] = 0;
-    end
+    initial req = 1'b0;
 
-    wire signed [CBITS-1:0] x5_real = fire ? {x5n_hi[0], x5n_lo[0]} : {CBITS{1'b0}};
-    wire signed [CBITS-1:0] x5_imag = fire ? {x5n_hi[1], x5n_lo[1]} : {CBITS{1'b0}};
+    // Explicit sign extension: an unsigned zero in a ?: would zero-extend x5n.
+    wire signed [CBITS-1:0] x5_real = fire ? {{(CBITS-CW){x5n_real[CW-1]}}, x5n_real} : {CBITS{1'b0}};
+    wire signed [CBITS-1:0] x5_imag = fire ? {{(CBITS-CW){x5n_imag[CW-1]}}, x5n_imag} : {CBITS{1'b0}};
 
     assign y_real = y5[CBITS-1 -:OBITS] + y5[(CBITS-1)-OBITS];  // output data with truncation to remove DC spur
     assign y_imag = s5[CBITS-1 -:OBITS] + s5[(CBITS-1)-OBITS];
@@ -87,70 +84,70 @@ module CicInterpM5Mem(
     end
 
     // -------------------------------------------------------------- sequencer
-    reg [5:0] step = 6'd0;
+    reg [4:0] step = 5'd0;
     reg       running = 1'b0;
     reg       bank = 1'b1;          // bank holding xs(k) after event k
-    reg signed [IBITS-1:0] in_real = 0, in_imag = 0;
+    reg signed [IBITS-1:0] in_imag = 0;
 
     always @(posedge clock) begin
         if (clock_en) begin
             if (event_now) begin
-                step <= 6'd0;
+                step <= 5'd0;
                 running <= 1'b1;
                 bank <= ~bank;
-                in_real <= x_real;
                 in_imag <= x_imag;
             end else if (running) begin
-                step <= step + 6'd1;
+                step <= step + 5'd1;
                 if (step == LAST_STEP) running <= 1'b0;
             end
         end
     end
 
-    // Read side: op o = (step - 4) / 4 covers stage 4 - o / 2, channel o % 2.
-    wire [5:0] rstep = step - 6'd4;
-    wire [3:0] rop   = rstep[5:2];
-    wire [1:0] rph   = rstep[1:0];
+    // Read side: op o = (step - 1) / 2 covers stage 4 - o / 2, channel o % 2.
+    wire [4:0] rstep  = step - 5'd1;
+    wire [3:0] rop    = rstep[4:1];
     wire [2:0] rstage = 3'd4 - rop[3:1];
-    wire [5:0] raddr = {rop[0], rstage, bank ^ rph[0], rph[1]};
+    wire [4:0] raddr  = {rop[0], rstage, bank ^ rstep[0]};
 
     // Process side: data read at step t is in mem_q2 at step t + 2.
-    wire [5:0] pstep = step - 6'd6;
-    wire [3:0] pop   = pstep[5:2];
-    wire [1:0] pph   = pstep[1:0];
+    wire [4:0] pstep  = step - 5'd3;
+    wire [3:0] pop    = pstep[4:1];
     wire [2:0] pstage = 3'd4 - pop[3:1];
-    wire       pchan = pop[0];
-    wire       processing = running && step >= 6'd6 && step <= LAST_STEP;
+    wire       pchan  = pop[0];
+    wire       processing = running && step >= 5'd3 && step <= LAST_STEP;
 
     // ------------------------------------------------------------------- RAM
-    (* ramstyle = "M9K" *) reg [LO-1:0] comb_mem [0:63];
-    reg [LO-1:0] mem_q = 0, mem_q2 = 0;
-    reg [LO-1:0] a_reg = 0;
-    reg          borrow = 1'b0;
+    (* ramstyle = "M9K" *) reg [CW-1:0] comb_mem [0:31];
+    reg [CW-1:0] mem_q = 0, mem_q2 = 0;
+    reg [CW-1:0] a_reg = 0;
 
     integer m;
-    initial for (m = 0; m < 64; m = m + 1) comb_mem[m] = {LO{1'b0}};
+    initial for (m = 0; m < 32; m = m + 1) comb_mem[m] = {CW{1'b0}};
 
-    wire signed [CBITS-1:0] in_sx = (step[1] ? in_imag : in_real);
-    wire [LO:0]   diff_lo = {1'b0, a_reg} - {1'b0, mem_q2};
-    wire [HI-1:0] diff_hi = a_reg[HI-1:0] - mem_q2[HI-1:0] - borrow;
+    wire signed [CW-1:0] in_real_sx = x_real;
+    wire signed [CW-1:0] in_imag_sx = in_imag;
+    wire [CW-1:0] diff = a_reg - mem_q2;
 
     reg          wen;
-    reg [5:0]    waddr;
-    reg [LO-1:0] wdata;
+    reg [4:0]    waddr;
+    reg [CW-1:0] wdata;
     always @* begin
         wen = 1'b0;
-        waddr = 6'd0;
-        wdata = {LO{1'b0}};
-        if (running && step <= 6'd3) begin
-            // New x0 into bank k % 2: I low, I high, Q low, Q high.
+        waddr = 5'd0;
+        wdata = {CW{1'b0}};
+        if (event_now) begin
+            // The bank toggles on this edge, so x0(k) for I goes to ~bank.
             wen = 1'b1;
-            waddr = {step[1], 3'd0, bank, step[0]};
-            wdata = step[0] ? {{(LO-HI){1'b0}}, in_sx[CBITS-1:LO]} : in_sx[LO-1:0];
-        end else if (processing && pph[0] && pstage != 3'd4) begin
+            waddr = {1'b0, 3'd0, ~bank};
+            wdata = in_real_sx;
+        end else if (running && step == 5'd0) begin
             wen = 1'b1;
-            waddr = {pchan, pstage + 3'd1, ~bank, pph[1]};
-            wdata = pph[1] ? {{(LO-HI){1'b0}}, diff_hi} : diff_lo[LO-1:0];
+            waddr = {1'b1, 3'd0, bank};
+            wdata = in_imag_sx;
+        end else if (processing && pstep[0] && pstage != 3'd4) begin
+            wen = 1'b1;
+            waddr = {pchan, pstage + 3'd1, ~bank};
+            wdata = diff;
         end
     end
 
@@ -160,11 +157,10 @@ module CicInterpM5Mem(
             mem_q2 <= mem_q;
             if (wen) comb_mem[waddr] <= wdata;
             if (processing) begin
-                if (!pph[0]) a_reg <= mem_q2;
-                if (pph == 2'd1) borrow <= diff_lo[LO];
-                if (pph[0] && pstage == 3'd4) begin
-                    if (pph[1]) x5n_hi[pchan] <= diff_hi;
-                    else        x5n_lo[pchan] <= diff_lo[LO-1:0];
+                if (!pstep[0]) a_reg <= mem_q2;
+                if (pstep[0] && pstage == 3'd4) begin
+                    if (pchan) x5n_imag <= diff;
+                    else       x5n_real <= diff;
                 end
             end
         end
