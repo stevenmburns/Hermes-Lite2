@@ -33,9 +33,9 @@ skipped.
 | `test_fir_outputs_bit_exact` | Every FIR output, I and Q, matches the model | 20,512 of 20,512 |
 | `test_cic_outputs_bit_exact` | Every CIC output on every clock matches the model | 4,102,399 of 4,102,399 |
 | `test_tone_gain_and_flatness` | Tones at +1.7, -7.0, +14.1 and -15.0 kHz are within 0.2 dB of the gain computed from the coefficients and CIC growth, and within 0.1 dB of each other | +0.001 to +0.003 dB |
-| `test_images_and_spurs` | Worst spur below 192 kHz under -72 dBc, from 192 kHz to 1.536 MHz under -100 dBc | -78.3 dBc at -33.9 kHz, -110.3 dBc at +193.7 kHz |
+| `test_images_and_spurs` | Worst spur below 192 kHz under -72 dBc, from 192 kHz to 1.536 MHz under -100 dBc | -82.2 dBc at -33.9 kHz, -115.2 dBc at +193.7 kHz |
 
-The spur limits sit 6 and 10 dB above the measured values, so they guard against
+The spur limits sit 10 and 15 dB above the measured values, so they guard against
 regressions rather than prove a specification.
 
 Twelve hand-made mutations were each caught. Six in `CicInterpM5.v` failed only
@@ -44,10 +44,13 @@ the CIC check. Six in the FIR, its ROM latency and its RAM latency failed both.
 ## Notes on the FIR
 
 * The passband is about +/-15 kHz. A tone at -18.9 kHz comes out 1.6 dB low.
-* `FirInterp8_1024` does NTAPS / 8 + 1 = 129 multiply-adds over a 128-sample ring.
-  The last one wraps to the newest sample again and uses coefficient p
-  (|p| <= 11, against a peak of 88,334), adding about -80 dB of error. The model
-  reproduces this so that it can be bit-exact.
+* `FirInterp8_1024` used to do NTAPS / 8 + 1 = 129 multiply-adds over its
+  128-sample ring. With NTAPS = 1024 the last one wrapped to the newest sample
+  again, with coefficient p (|p| <= 11, against a peak of 88,334). It now does
+  exactly NTAPS / 8. The fix improved the worst image below 192 kHz from -78.3
+  to -82.2 dBc, and from 192 kHz to 1.536 MHz from -110.3 to -115.2 dBc. For
+  NTAPS <= 1016 with zeros in the unused ROM entries, the extra product had a
+  zero coefficient, so those filters are unchanged.
 
 ## Running
 

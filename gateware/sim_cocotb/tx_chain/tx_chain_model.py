@@ -12,16 +12,13 @@ FIR timing, as wired in radio.v:
 * Write n stores the value the testbench was presenting at that moment.  The
   testbench presents 0 before the first request and ``stim[n - 1]`` after the
   n-th request, so the written sequence is ``w = [0, stim[0], stim[1], ...]``.
-* Output m uses phase p = m % 8 and the newest written sample n = m // 8 - 1.
-  The state machine does NTAPS / 8 + 1 = 129 multiply-adds over a 128-entry
-  ring, so the last one wraps to the newest sample again, with coefficient
-  (p + 1024) % 1024 = p.
+* Output m uses phase p = m % 8 and the newest written sample n = m // 8 - 1,
+  and sums NTAPS / 8 = 128 products: sample n - j with coefficient p + 8 j.
 """
 
 import numpy as np
 
-FIR_RING = 128
-FIR_MACS = 129
+FIR_MACS = 128
 FIR_PHASES = 8
 
 
@@ -40,11 +37,11 @@ def fir_outputs(stim_i, stim_q, coef, count):
         phase = np.arange(count) % FIR_PHASES
         acc = np.zeros(count, dtype=np.int64)
         for j in range(FIR_MACS):
-            k = newest - (j % FIR_RING)
+            k = newest - j
             valid = (k >= 0) & (k < len(w))
             sample = np.where(valid, w[np.clip(k, 0, len(w) - 1)], 0)
             # Samples are 16 bits sign-extended to 18; the product is 36 bits.
-            product = sample * coef[(phase + 8 * j) % 1024]
+            product = sample * coef[phase + 8 * j]
             acc += (product >> 12) + ((product >> 11) & 1)
         acc &= (1 << 24) - 1
         half = acc >> 1

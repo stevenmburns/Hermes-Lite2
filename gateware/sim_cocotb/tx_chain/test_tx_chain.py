@@ -194,8 +194,8 @@ async def test_images_and_spurs(dut):
     dut._log.info("worst spur, |f| < 192 kHz: %.1f dBc at %+.0f Hz", fir_images, fir_f)
     dut._log.info("worst spur, 192 kHz to 1.536 MHz: %.1f dBc at %+.0f Hz", cic_images, cic_f)
     dut._log.info("worst spur anywhere: %.1f dBc at %+.0f Hz", anywhere, any_f)
-    # Limits sit about 6 dB (FIR) and 10 dB (CIC) above the measured values:
-    # -78.3 dBc at -33.9 kHz and -110.3 dBc at +193.7 kHz.
+    # Limits sit about 10 dB (FIR) and 15 dB (CIC) above the measured values:
+    # -82.2 dBc at -33.9 kHz and -115.2 dBc at +193.7 kHz.
     assert fir_images < -72, f"FIR image {fir_images:.1f} dBc at {fir_f:+.0f} Hz"
     assert cic_images < -100, f"CIC image {cic_images:.1f} dBc at {cic_f:+.0f} Hz"
     assert anywhere < -72, f"spur {anywhere:.1f} dBc at {any_f:+.0f} Hz"
