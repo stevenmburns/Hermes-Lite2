@@ -91,7 +91,11 @@ always @(posedge clock) begin
 end
 
 // ------------------------------------------------------- delay match
+// Kept in registers: Quartus would otherwise turn this chain into an
+// altshift_taps RAM and spend an M9K on it.
+(* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *)
 reg signed [15:0] d_i [0:OUT_DELAY];
+(* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *)
 reg signed [15:0] d_q [0:OUT_DELAY];
 integer k;
 initial for (k = 0; k <= OUT_DELAY; k = k + 1) begin d_i[k] = 0; d_q[k] = 0; end
