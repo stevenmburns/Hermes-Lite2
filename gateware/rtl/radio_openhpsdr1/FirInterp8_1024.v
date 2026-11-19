@@ -107,7 +107,7 @@ module FirInterp8_1024(
 	
 	parameter OBITS			= 20;		// output bits
 	parameter ABITS			= 24;		// adder bits
-	parameter NTAPS			= 11'd1024;	// number of filter taps, even by 8, 1024-8 max
+	parameter NTAPS			= 11'd1024;	// number of filter taps, even by 8, 1024 max
 	parameter NTAPS_BITS		= 10;		// number of address bits for coefficient memory
 
 	reg [3:0] rstate;		// state machine
@@ -136,8 +136,11 @@ module FirInterp8_1024(
 	reg  signed [17:0] reg_coef;
 	reg  signed [35:0] Rmult, Imult;	// multiplier result
 	reg  [2:0] phase;						// count 0, 1, ..., 7
-	reg  [9:0] counter;					// count NTAPS/8 samples + latency
-	localparam [10:0] COUNTER_INIT_WIDE = NTAPS / 11'd8 + 11'd1;
+	reg  [9:0] counter;					// count NTAPS/8 samples
+	// rRun runs COUNTER_INIT + 1 cycles. The first adds the zeroed Rmult, so this
+	// accumulates exactly NTAPS/8 products. One more would wrap the 128-entry
+	// sample ring and the coefficient address when NTAPS is 1024.
+	localparam [10:0] COUNTER_INIT_WIDE = NTAPS / 11'd8;
 
 
 	initial
@@ -188,7 +191,7 @@ module FirInterp8_1024(
 					rstate <= rAddr;
 					raddr <= waddr;		// read address -> newest sample
 					caddr <= phase;		// start coefficient
-					counter <= COUNTER_INIT_WIDE[9:0];	// count samples and pipeline latency
+					counter <= COUNTER_INIT_WIDE[9:0];	// count samples
 					Raccum <= 1'd0;
 					Iaccum <= 1'd0;
 					Rmult <= 1'd0;
