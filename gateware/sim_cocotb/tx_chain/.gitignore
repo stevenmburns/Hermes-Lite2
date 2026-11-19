@@ -1,0 +1,7 @@
+# ROM image converted from the production .mif by ../rx_chain/mif2mem.py
+*.mif
+rom_images.stamp
+stim.mem
+# Raw captures written by tb_tx_chain.sv
+cic_out.bin
+fir_out.bin
