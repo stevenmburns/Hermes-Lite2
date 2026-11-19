@@ -2,4 +2,4 @@
 *.mif
 rom_images.stamp
 stim.mem
-sim_build_quad/
+sim_build_mem/

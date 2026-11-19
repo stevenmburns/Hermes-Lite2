@@ -7,10 +7,13 @@ PYTHON ?= python3
 # USE_ALTSYNCRAM selects the same ROM and RAM code paths as the production build.
 COMPILE_ARGS += +define+USE_ALTSYNCRAM=1
 
-# Set VARCIC_QUAD=1 to test the variable CIC shared by all four receivers
+# hl2b5up_main shares one variable CIC across its four receivers.  Run with
+# VARCIC_QUAD= (empty) to test the per-receiver varcic_mem instead.
+VARCIC_QUAD ?= 1
 ifneq ($(VARCIC_QUAD),)
 COMPILE_ARGS += +define+VARCIC_QUAD=1
-SIM_BUILD = sim_build_quad
+else
+SIM_BUILD = sim_build_mem
 endif
 
 VERILOG_SOURCES += $(PWD)/tb_rx_chain.sv

@@ -38,6 +38,7 @@
 
 set_global_assignment -name VERILOG_MACRO "BETA5=1"
 set_global_assignment -name VERILOG_MACRO "USE_ALTSYNCRAM=1"
+set_global_assignment -name VERILOG_MACRO "VARCIC_QUAD=1"
 
 # Warning (18236): tell Quartus how many CPUs it may use (machine has 16).
 set_global_assignment -name NUM_PARALLEL_PROCESSORS 8
