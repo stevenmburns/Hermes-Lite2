@@ -1,1 +1,3 @@
-sim_build_fixed/
+sim_build_*/
+results_*.log
+results.xml

@@ -1,16 +1,20 @@
-"""cocotb tests for rtl/debounce.v, the CW key, PTT and TX-inhibit debouncer.
+"""cocotb tests for rtl/debounce.v and candidate replacements.
 
-debounce samples pb on each msec_pulse into a six-sample history. On a pulse
-where the history (before that pulse's sample is added) is "stable", clean_pb
-takes the new sample; otherwise clean_pb holds. The header comment describes
-the intent: "immediate response if last signal stabilized", i.e. stable means
-all six samples equal, so the first edge after a quiet period goes straight
-through and bounce is ignored until the input has been steady for six samples.
+All designs have debounce.v's ports and sample pb once per msec_pulse. DUT
+selects which one is simulated (see the Makefile):
 
-The committed RTL computes stable = (&pb_history) | (|pb_history), which is
-just |pb_history. Run with FIXED=1 to simulate the corrected expression,
-(&pb_history) | ~(|pb_history). The model tests pass either way; the
-specification tests are expected to fail on the committed RTL.
+  committed   rtl/debounce.v as it is: stable = (&h) | (|h), which is |h
+  fixed       the same file with stable = (&h) | ~(|h), what its comment
+              describes: "immediate response if last signal stabilized"
+  cl          candidates/debounce_cl.v: confirm 2 samples, then lock out 6
+  run         candidates/debounce_run.v: switch after 4 agreeing samples
+  integ       candidates/debounce_integ.v: saturating counter, 0..4
+
+Each design has a pulse-level Python model. test_matches_model_* check the RTL
+against it on every pulse. The property tests then check behaviour; a design
+that is not expected to have a property has that test marked expect_fail, so
+every run reports all tests passing and any change in behaviour shows up as a
+failure. test_keying_metrics logs the numbers compared in README.md.
 """
 
 import os
@@ -20,38 +24,106 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, RisingEdge
 
-FIXED = bool(os.environ.get("FIXED"))
+DUT = os.environ.get("DUT", "committed")
 MS_CLOCKS = 8          # clocks per msec_pulse; the RTL only acts on pulses
 HISTORY = 6
 
 
-class Debounce:
-    """Pulse-level model of debounce.v, committed or corrected."""
+# ------------------------------------------------------------------- models
+
+class ShiftHistory:
+    """rtl/debounce.v, committed (fixed=False) or corrected (fixed=True)."""
 
     def __init__(self, fixed):
         self.fixed = fixed
         self.history = 0
         self.clean = 0
 
-    def stable(self):
-        if self.fixed:
-            return self.history in (0, (1 << HISTORY) - 1)
-        return self.history != 0          # (&h) | (|h) == |h
-
     def pulse(self, pb):
-        if self.stable():
+        if self.fixed:
+            stable = self.history in (0, (1 << HISTORY) - 1)
+        else:
+            stable = self.history != 0
+        if stable:
             self.clean = pb
         self.history = ((self.history << 1) | pb) & ((1 << HISTORY) - 1)
         return self.clean
 
 
-def run_model(samples, fixed):
-    model = Debounce(fixed)
+class ConfirmLockout:
+    IDLE, CHECK, LOCK = range(3)
+
+    def __init__(self, confirm=2, lockout=6):
+        self.confirm, self.lockout = confirm, lockout
+        self.state, self.cnt, self.clean = self.IDLE, 0, 0
+
+    def pulse(self, pb):
+        if self.state == self.IDLE:
+            if pb != self.clean:
+                if self.confirm <= 1:
+                    self.clean, self.state, self.cnt = pb, self.LOCK, 0
+                else:
+                    self.state, self.cnt = self.CHECK, 1
+        elif self.state == self.CHECK:
+            if pb == self.clean:
+                self.state = self.IDLE
+            elif self.cnt == self.confirm - 1:
+                self.clean, self.state, self.cnt = pb, self.LOCK, 0
+            else:
+                self.cnt += 1
+        else:
+            if self.cnt == self.lockout - 1:
+                self.state = self.IDLE
+            else:
+                self.cnt += 1
+        return self.clean
+
+
+class RunLength:
+    def __init__(self, n=4):
+        self.n, self.last, self.run, self.clean = n, 0, 0, 0
+
+    def pulse(self, pb):
+        run = 1 if pb != self.last else min(self.run + 1, self.n)
+        self.last, self.run = pb, run
+        if run == self.n:
+            self.clean = pb
+        return self.clean
+
+
+class Integrator:
+    def __init__(self, top=4):
+        self.top, self.cnt, self.clean = top, 0, 0
+
+    def pulse(self, pb):
+        self.cnt = min(self.cnt + 1, self.top) if pb else max(self.cnt - 1, 0)
+        if self.cnt == self.top:
+            self.clean = 1
+        if self.cnt == 0:
+            self.clean = 0
+        return self.clean
+
+
+MODELS = {
+    "committed": lambda: ShiftHistory(fixed=False),
+    "fixed": lambda: ShiftHistory(fixed=True),
+    "cl": ConfirmLockout,
+    "run": RunLength,
+    "integ": Integrator,
+}
+
+
+def run_model(samples, name=DUT, settle=HISTORY + 2):
+    model = MODELS[name]()
+    for _ in range(settle):
+        model.pulse(0)
     return [model.pulse(s) for s in samples]
 
 
+# ------------------------------------------------------------------- driver
+
 async def setup(dut):
-    """Start the clock and settle to an all-zero history with pb released."""
+    """Start the clock and settle with pb released."""
     dut.pb.value = 0
     dut.msec_pulse.value = 0
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
@@ -82,25 +154,13 @@ async def drive(dut, samples):
     return out
 
 
-def history_before(samples, i):
-    """The six samples in pb_history when sample i is taken (setup was 0s)."""
-    padded = [0] * HISTORY + list(samples)
-    return padded[i:i + HISTORY]
-
-
-def edges(trace):
+def edges(trace, start=0):
+    trace = [start] + list(trace)
     return sum(1 for a, b in zip(trace, trace[1:]) if a != b)
 
 
-def first_change(trace, start, value):
-    for i in range(start, len(trace)):
-        if trace[i] == value:
-            return i - start
-    return None
+# ---------------------------------------------------------------- stimulus
 
-
-# Keying with contact bounce on both edges, one sample per millisecond. Real
-# bounce is faster than 1 ms; what the RTL sees is the level at each pulse.
 PRESS_BOUNCE = [1, 0, 1, 1, 0, 1]
 RELEASE_BOUNCE = [0, 1, 0, 0, 1, 0]
 
@@ -110,97 +170,181 @@ def bouncy_key(down_ms=20, up_ms=20):
             RELEASE_BOUNCE + [0] * (up_ms - len(RELEASE_BOUNCE)))
 
 
-# --------------------------------------------------------------- model tests
+def keying(seed, elements=150, spikes=False):
+    """Random keying with bounce, one sample per millisecond.
+
+    Key-down and key-up times are 12 to 60 ms (a dit at 100 WPM is 12 ms).
+    Each edge bounces for 0 to 6 ms (Ganssle's worst switch: 6.2 ms) as random
+    samples, starting with the new level. With spikes, steady stretches also
+    get isolated one-sample inversions at least 8 ms from any edge. Returns the
+    samples and, per element, the true press and release sample indices.
+    """
+    rng = random.Random(seed)
+    samples, marks = [0] * 30, []
+
+    def stretch(level, length):
+        body = [level] * length
+        if spikes and length > 20:
+            placed = []
+            for _ in range(rng.randint(0, 2)):
+                k = rng.randint(8, length - 9)
+                if all(abs(k - j) >= 3 for j in placed):   # keep them isolated
+                    body[k] = 1 - level
+                    placed.append(k)
+        return body
+
+    for _ in range(elements):
+        for level in (1, 0):
+            if level:
+                press = len(samples)
+            else:
+                release = len(samples)
+            bounce = rng.randint(0, 6)
+            edge = ([level] + [rng.randint(0, 1) for _ in range(bounce - 1)]
+                    if bounce else [])
+            length = rng.randint(12, 60)
+            samples += edge + stretch(level, length - len(edge))
+        marks.append((press, release))
+    samples += [0] * 30
+    return samples, marks
+
+
+def keying_metrics(out, marks):
+    """Delays and width errors, pairing output edges with keyed elements."""
+    rises = [i for i in range(len(out)) if out[i] and (i == 0 or not out[i - 1])]
+    falls = [i for i in range(1, len(out)) if not out[i] and out[i - 1]]
+    extra = len(rises) + len(falls) - 2 * len(marks)
+    if extra:
+        return {"extra_edges": extra}
+    press = [r - p for r, (p, _) in zip(rises, marks)]
+    release = [f - q for f, (_, q) in zip(falls, marks)]
+    width = [(f - r) - (q - p) for r, f, (p, q) in zip(rises, falls, marks)]
+    return {"extra_edges": 0, "press": press, "release": release,
+            "width": width}
+
+
+# ------------------------------------------------------------ expectations
+
+# Which properties each design has; property tests are expect_fail otherwise.
+EXPECT = {
+    #             bounce  immediate  realistic  spikes
+    "committed": (False,  False,     False,     False),
+    "fixed":     (True,   True,      True,      False),
+    "cl":        (True,   False,     True,      True),
+    "run":       (True,   False,     True,      True),
+    "integ":     (True,   False,     True,      True),
+}
+
+
+def expect_fail(index):
+    return not EXPECT[DUT][index]
+
+
+# -------------------------------------------------------------- model tests
 
 @cocotb.test()
 async def test_matches_model_random(dut):
-    """The RTL matches the pulse model on random bouncy keying, every pulse."""
+    """The RTL matches its model on random bouncy input, every pulse."""
     await setup(dut)
     rng = random.Random(182)
-    samples = []
-    level = 0
+    samples, level = [], 0
     while len(samples) < 2000:
         level ^= 1
         samples += [rng.randint(0, 1) for _ in range(rng.randint(0, 5))]
         samples += [level] * rng.randint(1, 15)
     got = await drive(dut, samples)
-    model = Debounce(FIXED)
-    for _ in range(HISTORY + 2):
-        model.pulse(0)
-    want = [model.pulse(s) for s in samples]
+    want = run_model(samples)
     mismatches = sum(g != w for g, w in zip(got, want))
-    dut._log.info("%s RTL: %d pulses, %d mismatches, %d output edges "
-                  "for %d input edges", "fixed" if FIXED else "committed",
-                  len(samples), mismatches, edges(got), edges(samples))
+    dut._log.info("%s: %d pulses, %d mismatches, %d output edges for %d input "
+                  "edges", DUT, len(samples), mismatches, edges(got),
+                  edges(samples))
     assert mismatches == 0
 
 
 @cocotb.test()
-async def test_model_distinguishes_versions(dut):
-    """The two expressions differ on bouncy keying (guards the model test)."""
-    samples = bouncy_key()
-    assert run_model(samples, fixed=True) != run_model(samples, fixed=False)
-
-
-# ------------------------------------------------------- specification tests
-
-@cocotb.test(expect_fail=not FIXED)
-async def test_bounce_gives_one_press_and_one_release(dut):
-    """A bouncy key press and release give exactly two clean_pb edges."""
+async def test_matches_model_keying(dut):
+    """The RTL matches its model on realistic keying with spikes."""
     await setup(dut)
-    got = await drive(dut, bouncy_key() * 3)
-    dut._log.info("clean_pb edges: %d (want 6) %s", edges([0] + got),
-                  "".join(map(str, got)))
-    assert edges([0] + got) == 6
-
-
-@cocotb.test(expect_fail=not FIXED)
-async def test_press_is_immediate(dut):
-    """After a quiet period the first sample of a press reaches clean_pb."""
-    await setup(dut)
-    got = await drive(dut, bouncy_key())
-    press = first_change(got, 0, 1)
-    release = first_change(got, 20, 0)
-    dut._log.info("latency after the sampling pulse: press %s ms, "
-                  "release %s ms", press, release)
-    assert press == 0 and release == 0
+    samples, _ = keying(seed=7, elements=40, spikes=True)
+    got = await drive(dut, samples)
+    assert got == run_model(samples)
 
 
 @cocotb.test()
-async def test_release_is_immediate(dut):
-    """Both versions release on the first low sample after a steady press."""
-    await setup(dut)
-    got = await drive(dut, [1] * 20 + [0] * 10)
-    assert first_change(got, 20, 0) == 0
+async def test_models_differ(dut):
+    """Every pair of models differs on this input (guards the model tests)."""
+    samples, _ = keying(seed=7, elements=40, spikes=True)
+    traces = {name: tuple(run_model(samples, name)) for name in MODELS}
+    assert len(set(traces.values())) == len(MODELS)
 
 
-@cocotb.test(expect_fail=not FIXED)
-async def test_steady_input_after_bounce_is_followed(dut):
-    """Once the input has been steady for six samples, clean_pb equals it."""
+# ----------------------------------------------------------- property tests
+
+@cocotb.test(expect_fail=expect_fail(0))
+async def test_bounce_gives_one_press_and_one_release(dut):
+    """Three bouncy keyings give exactly six clean_pb edges."""
     await setup(dut)
-    samples = bouncy_key(down_ms=12, up_ms=12) * 4
-    got = await drive(dut, samples)
-    bad = [i for i in range(len(samples))
-           if len(set(history_before(samples, i) + [samples[i]])) == 1
-           and got[i] != samples[i]]
-    prev = [0] + got
-    worse = [i for i in range(len(samples))
-             if got[i] != prev[i] and len(set(history_before(samples, i))) > 1]
-    dut._log.info("steady samples not followed: %d; output changes while the "
-                  "history was bouncing: %d", len(bad), len(worse))
-    assert not bad and not worse
+    got = await drive(dut, bouncy_key() * 3)
+    dut._log.info("clean_pb edges: %d (want 6) %s", edges(got),
+                  "".join(map(str, got)))
+    assert edges(got) == 6
+
+
+@cocotb.test(expect_fail=expect_fail(1))
+async def test_press_is_immediate(dut):
+    """The first sample of a press after a quiet period reaches clean_pb."""
+    await setup(dut)
+    got = await drive(dut, bouncy_key())
+    assert got[0] == 1
+
+
+@cocotb.test(expect_fail=expect_fail(2))
+async def test_realistic_keying_no_extra_edges(dut):
+    """150 bouncy elements (0-6 ms bounce, no spikes): two edges each."""
+    await setup(dut)
+    samples, marks = keying(seed=1)
+    m = keying_metrics(await drive(dut, samples), marks)
+    dut._log.info("extra edges: %d", m["extra_edges"])
+    assert m["extra_edges"] == 0
+
+
+@cocotb.test(expect_fail=expect_fail(3))
+async def test_spikes_rejected(dut):
+    """The same keying plus isolated 1 ms spikes: still two edges each."""
+    await setup(dut)
+    samples, marks = keying(seed=1, spikes=True)
+    m = keying_metrics(await drive(dut, samples), marks)
+    dut._log.info("extra edges with spikes: %d", m["extra_edges"])
+    assert m["extra_edges"] == 0
+
+
+@cocotb.test()
+async def test_keying_metrics(dut):
+    """Log delay and width error on realistic keying (README table)."""
+    await setup(dut)
+    for spikes in (False, True):
+        samples, marks = keying(seed=1, spikes=spikes)
+        got = await drive(dut, samples)
+        assert got == run_model(samples)
+        m = keying_metrics(got, marks)
+        if m["extra_edges"]:
+            dut._log.info("METRICS %s spikes=%s extra_edges=%d", DUT, spikes,
+                          m["extra_edges"])
+            continue
+        dut._log.info(
+            "METRICS %s spikes=%s extra_edges=0 press=%d..%d ms (mean %.2f) "
+            "release=%d..%d ms (mean %.2f) width_error=%+d..%+d ms",
+            DUT, spikes, min(m["press"]), max(m["press"]),
+            sum(m["press"]) / len(m["press"]), min(m["release"]),
+            max(m["release"]), sum(m["release"]) / len(m["release"]),
+            min(m["width"]), max(m["width"]))
 
 
 @cocotb.test()
 async def test_single_sample_glitch(dut):
-    """A 1 ms spike from idle: the trade-off between the two versions.
-
-    The committed RTL ignores it (the empty history is not "stable"). The
-    corrected one passes the first edge through immediately and then holds it
-    until the history is steady again, so the spike becomes a 7 ms pulse.
-    """
+    """A 1 ms spike from idle: log the clean_pb pulse it produces."""
     await setup(dut)
-    got = await drive(dut, [1] + [0] * 12)
-    width = sum(got)
-    dut._log.info("1 ms spike gives a %d ms clean_pb pulse", width)
-    assert width == (7 if FIXED else 0)
+    samples = [1] + [0] * 12
+    got = await drive(dut, samples)
+    dut._log.info("METRICS %s 1 ms spike gives a %d ms pulse", DUT, sum(got))
+    assert got == run_model(samples)
