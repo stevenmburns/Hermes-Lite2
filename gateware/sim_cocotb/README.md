@@ -2,12 +2,13 @@
 
 ## Overview
 
-This directory holds 22 self-contained cocotb testbenches for the gateware,
+This directory holds 23 self-contained cocotb testbenches for the gateware,
 one per subdirectory, covering the RX DSP chain (`cic`, `cordic`, `cpl_cordic`,
 `mix1`, `mixtx1`, `nco1`, `rx1`, `rx2`, `rx2iq`, `sincos`) and the Ethernet
 stack (`eth_arp`, `eth_crc32`, `eth_icmp`, `eth_ip_recv`, `eth_ip_send`,
 `eth_mac_recv`, `eth_mac_send`, `eth_mdio`, `eth_network`, `eth_rgmii`,
-`eth_udp_recv`, `eth_udp_send`).  Each subdirectory has its own `Makefile`,
+`eth_udp_recv`, `eth_udp_send`), plus `debounce` for the CW key and PTT input
+debouncer.  Each subdirectory has its own `Makefile`,
 its own `README.md` describing what the test does, and its own `sim_build/`
 scratch directory; the `Makefile` here only fans out to them.  Everything is
 driven by Verilator as the simulator, with cocotb's VPI interface loading the
@@ -86,7 +87,7 @@ PASS cordic
 == rx2iq
 PASS rx2iq
 
-22/22 test directories passed
+23/23 test directories passed
 ```
 
 A failing testbench does not cut the run short; the tally is what exits
@@ -108,8 +109,8 @@ works.)
 One quirk: `make -C eth_icmp` from outside fails (`No rule to make target
 '.../rtl/sync.v'`) because that Makefile builds its RTL paths from the
 environment `PWD` and doesn't set it.  Use `cd eth_icmp && make`, or the
-top-level `make eth_icmp`, which passes the right `PWD`.  Waveforms: 18 of the
-22 Makefiles already pass `--trace` and write `dump.vcd` in the test directory;
+top-level `make eth_icmp`, which passes the right `PWD`.  Waveforms: 19 of the
+23 Makefiles already pass `--trace` and write `dump.vcd` in the test directory;
 for the four that don't (`eth_icmp`, `eth_mac_send`, `eth_network`,
 `eth_rgmii`), run `make clean && make EXTRA_ARGS=--trace` (clean first: the
 trace has to be in at compile time).  The benches are written for Verilator;
@@ -118,8 +119,8 @@ trace has to be in at compile time).  The benches are written for Verilator;
 
 ## Expected results
 
-All 22 test directories pass on a clean checkout with the environment above:
-73 cocotb tests in total, every one reported as `PASS=n FAIL=0 SKIP=0` in its
+All 23 test directories pass on a clean checkout with the environment above:
+80 cocotb tests in total, every one reported as `PASS=n FAIL=0 SKIP=0` in its
 `test-logs/<dir>.log`.  Wall time from a clean tree is roughly 1 min 20 s
 serial, ~20 s with `-j8`; most benches build and run in about a second, the
 slow ones are `eth_network` ~13 s, `rx2iq` ~11 s, `rx2` ~11 s.  The DSP benches
@@ -139,7 +140,7 @@ single-test output:
 
 | Path | Purpose |
 | --- | --- |
-| `Makefile` | fan-out runner for all 22 benches (`make`, `make -j8`, `make summary`, `make clean`) |
+| `Makefile` | fan-out runner for all 23 benches (`make`, `make -j8`, `make summary`, `make clean`) |
 | `*/Makefile`, `*/test_*.py`, `*/README.md` | one self-contained testbench per subdirectory, with its own documentation |
 | `hlmodel.py` | golden fixed-point models of the DSP blocks, used by the DSP benches |
 | `spectrum.py` | FFT spur/noise measurement and plot helpers (`*_spectrum.png`) |
