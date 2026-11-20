@@ -169,7 +169,7 @@ logic  [ 9:0]       PWM_max = 10'd1023; // maximum width of TX envelope PWM puls
 logic  [ 9:0]       PWM_max_next;
 
 logic   [5:0]       rate;
-logic   [11:0]      adcpipe [0:4];
+logic   [11:0]      adcpipe [0:MAXRX/2-1];   // one per mixer pair
 
 
 logic [23:0]  rx_data_i [0:MAXRX-1];
@@ -1227,7 +1227,7 @@ end
 endgenerate
 
 
-generate if (DEBUGRX == 1) begin: DEBUGRX
+generate if (DEBUGRX == 1) begin: DEBUGRX_BLK
 
 logic [3:0] synthetic_count;
 logic signed [11:0] synthetic_adc;
@@ -1293,10 +1293,7 @@ end
 // Pipeline for adc fanout
 always @ (posedge clk) begin
   adcpipe[0] <= synthetic_adc;
-  adcpipe[1] <= rx_data_adc;
-  adcpipe[2] <= rx_data_adc;
-  adcpipe[3] <= rx_data_adc;
-  adcpipe[4] <= rx_data_adc;
+  for (int k = 1; k < MAXRX/2; k = k + 1) adcpipe[k] <= rx_data_adc;
 end
 
 end else begin
@@ -1305,10 +1302,7 @@ end else begin
   // Pipeline for adc fanout
 always @ (posedge clk) begin
   adcpipe[0] <= rx_data_adc;
-  adcpipe[1] <= rx_data_adc;
-  adcpipe[2] <= rx_data_adc;
-  adcpipe[3] <= rx_data_adc;
-  adcpipe[4] <= rx_data_adc;
+  for (int k = 1; k < MAXRX/2; k = k + 1) adcpipe[k] <= rx_data_adc;
 end
 
 assign debug_out[15:4] = 12'd0;
