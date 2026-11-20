@@ -20,6 +20,8 @@ to `rx_stream.bin`.
 ```sh
 make                     # CHAIN=full NR=12: cic, varcic_mem, firX8R8 at 192 ksps
 make CHAIN=cic NR=12     # receiver_ciconly.v, the hl2b5up_cicrx chain
+make compare-shared NR=12   # CHAIN=cic, then CHAIN=cicshared (CIC_SHARED),
+                         # which must match it bit for bit, capture by capture
 make NR=4                # 4 receivers: radio.v uses CALCTYPE 3 at NR <= 5, 0 above
 make RADIO_V=/path/to/radio.v   # test another copy of radio.v
 ```
@@ -78,6 +80,14 @@ away alias into the band only 15 to 47 dB down.
 Worst spur over all channels: -103.3 dBc for full, NR=4 (CALCTYPE 3);
 -103.0 dBc for full, NR=12 (CALCTYPE 0); -104.6 dBc for CIC only, NR=12. In
 this test the cheaper CALCTYPE 0 sine and cosine cost under 0.5 dB.
+
+**Shared second CIC stage.** `CHAIN=cicshared` builds the CIC-only chain
+with `CIC_SHARED`, so one `cic_s2_shared` does every receiver's second stage
+(see `../cic_s2_shared/README.md`). Each capture is saved by the `CHAIN=cic`
+run and compared with it; `test_every_capture_matched_cic` fails if any
+reference is missing. With 12 receivers all four captures match, up to 4,091
+frames x 12 channels. The first whole frame may be one output apart, because
+the shared stage's strobe comes 59 clocks later in the output period.
 
 These are simulation results. Nothing here has been measured on a radio.
 
