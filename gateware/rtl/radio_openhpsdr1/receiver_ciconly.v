@@ -209,10 +209,25 @@ module receiver_nco(
   input [5:0] rate,             //48k....384k
   input signed [17:0] mixdata_I,
   input signed [17:0] mixdata_Q,
+`ifdef CIC_SHARED
+  output out_strobe,
+  output signed [23:0] out_data_I,
+  output signed [23:0] out_data_Q,
+  output [33:0] debug,
+  // Second CIC stage done by cic_s2_shared in radio.v: export the first
+  // stage's output and strobe, and pass the shared results through.
+  output               cic_strobe,
+  output signed [17:0] cic_i,
+  output signed [17:0] cic_q,
+  input                shr_strobe,
+  input  signed [23:0] shr_i,
+  input  signed [23:0] shr_q
+`else
   output reg out_strobe,
   output reg signed [23:0] out_data_I,
   output reg signed [23:0] out_data_Q,
   output [33:0] debug
+`endif
   );
 
   parameter CICRATE = 5;
@@ -273,6 +288,14 @@ cic_s1 cic_inst_Q2(
 );
 
 
+`ifdef CIC_SHARED
+assign cic_strobe = strobe1;
+assign cic_i      = decimA_real;
+assign cic_q      = decimA_imag;
+assign out_strobe = shr_strobe;
+assign out_data_I = shr_i;
+assign out_data_Q = shr_q;
+`else
 //I channel
 cic_s2 varcic_inst_I1(
     .clock(clock),
@@ -298,5 +321,6 @@ always @(posedge clock) begin
     out_data_Q <= data_Q;
   end
 end
+`endif
 
 endmodule

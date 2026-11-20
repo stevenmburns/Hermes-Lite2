@@ -38,6 +38,8 @@
 
 set_global_assignment -name VERILOG_MACRO "BETA5=1"
 set_global_assignment -name VERILOG_MACRO "USE_ALTSYNCRAM=1"
+# One cic_s2_shared does every receiver's second CIC stage, state in M9K.
+set_global_assignment -name VERILOG_MACRO "CIC_SHARED=1"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY build
 source ../../boards/hl2b5up/general.tcl
 source ../../boards/hl2b5up/pins.tcl
@@ -48,6 +50,7 @@ source ../../boards/hl2b5up/location.tcl
 source ../../boards/hl2b3to4/location_10rx.tcl
 source ../../boards/hl2b5up/files.tcl
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/receiver_ciconly.v
+set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/cic_s2_shared.v
 
 set_global_assignment -name VERILOG_FILE ./hermeslite.v
 set_global_assignment -name TOP_LEVEL_ENTITY hermeslite

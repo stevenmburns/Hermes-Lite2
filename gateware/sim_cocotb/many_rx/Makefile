@@ -10,6 +10,9 @@ NR ?= 12
 # CHAIN picks the receiver_nco source, as the variant .qsf files do:
 #   full  receiver_nco.v      cic -> varcic_mem -> firX8R8, rate selectable
 #   cic   receiver_ciconly.v  fixed CIC /16 /25, 192 ksps (hl2b5up_cicrx)
+#   cicshared  the same, with CIC_SHARED: one cic_s2_shared for all receivers.
+#              Each capture is compared bit for bit with the CHAIN=cic run's,
+#              which `make compare-shared` runs first.
 CHAIN ?= full
 export NR CHAIN
 
@@ -42,8 +45,12 @@ VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firram36.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firrom/firromH.v
 else ifeq ($(CHAIN),cic)
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/receiver_ciconly.v
+else ifeq ($(CHAIN),cicshared)
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/receiver_ciconly.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic_s2_shared.v
+COMPILE_ARGS += +define+CIC_SHARED=1
 else
-$(error CHAIN must be full or cic)
+$(error CHAIN must be full, cic or cicshared)
 endif
 
 TOPLEVEL = tb_many_rx
@@ -72,5 +79,10 @@ rom_images.stamp: $(RXCHAIN_DIR)/mif2mem.py $(MIF_FILES) $(TOPDIR)/nco/sin_fine.
 	cp $(TOPDIR)/nco/sin_fine.txt .
 	touch $@
 
+.PHONY: compare-shared
+compare-shared:
+	$(MAKE) CHAIN=cic NR=$(NR) SIM_BUILD=sim_build_cic_nr$(NR)
+	$(MAKE) CHAIN=cicshared NR=$(NR) SIM_BUILD=sim_build_cicshared_nr$(NR)
+
 clean::
-	rm -f rom_images.stamp stim.mem rx_stream.bin *.mif sin_fine.txt
+	rm -f rom_images.stamp stim.mem rx_stream.bin *.mif sin_fine.txt frames_*.npy

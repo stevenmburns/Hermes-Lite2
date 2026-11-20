@@ -200,6 +200,17 @@ wire signed [15:0] quad_var_i      [0:MAXRX-1];
 wire signed [15:0] quad_var_q      [0:MAXRX-1];
 `endif
 
+`ifdef CIC_SHARED
+// CIC_SHARED (receiver_ciconly.v only): one cic_s2_shared does the second CIC
+// stage of every receiver; see the instance after the receiver loop.
+wire               shr_cic_strobe [0:MAXRX-1];
+wire signed [17:0] shr_cic_i      [0:MAXRX-1];
+wire signed [17:0] shr_cic_q      [0:MAXRX-1];
+wire               shr_strobe;
+wire signed [23:0] shr_i          [0:MAXRX-1];
+wire signed [23:0] shr_q          [0:MAXRX-1];
+`endif
+
 logic [5:0]  synced_receivers   = 6'h00;
 
 
@@ -540,6 +551,15 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
           .var_i(quad_var_i[0]),
           .var_q(quad_var_q[0])
 `endif
+`ifdef CIC_SHARED
+          ,
+          .cic_strobe(shr_cic_strobe[0]),
+          .cic_i(shr_cic_i[0]),
+          .cic_q(shr_cic_q[0]),
+          .shr_strobe(shr_strobe),
+          .shr_i(shr_i[0]),
+          .shr_q(shr_q[0])
+`endif
         );
       end else begin : CHN
         receiver_nco #(
@@ -564,11 +584,42 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
           .var_i(quad_var_i[c]),
           .var_q(quad_var_q[c])
 `endif
+`ifdef CIC_SHARED
+          ,
+          .cic_strobe(shr_cic_strobe[c]),
+          .cic_i(shr_cic_i[c]),
+          .cic_q(shr_cic_q[c]),
+          .shr_strobe(shr_strobe),
+          .shr_i(shr_i[c]),
+          .shr_q(shr_q[c])
+`endif
         );
       end
     end
 
   endgenerate
+
+`ifdef CIC_SHARED
+  // Stream 2c is channel c's I, 2c+1 its Q. All receivers run from the same
+  // power-up counters, so channel 0's strobe1 times them all.
+  wire [2*NR*18-1:0] shr_in;
+  wire [2*NR*24-1:0] shr_out;
+  generate
+    for (c = 0; c < NR; c = c + 1) begin : SHRPACK
+      assign shr_in[(2*c)*18 +: 18]   = shr_cic_i[c];
+      assign shr_in[(2*c+1)*18 +: 18] = shr_cic_q[c];
+      assign shr_i[c] = shr_out[(2*c)*24 +: 24];
+      assign shr_q[c] = shr_out[(2*c+1)*24 +: 24];
+    end
+  endgenerate
+  cic_s2_shared #(.NS(2*NR)) shared_cic_s2 (
+    .clock     (clk),
+    .in_strobe (shr_cic_strobe[0]),
+    .in_data   (shr_in),
+    .out_strobe(shr_strobe),
+    .out_data  (shr_out)
+  );
+`endif
 
 `ifdef VARCIC_QUAD
   // One variable CIC serves up to four receivers from a shared block RAM.

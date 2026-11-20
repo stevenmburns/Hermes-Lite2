@@ -128,7 +128,43 @@ async def run_capture(dut, tunings, outputs):
     frames = data.reshape(nframes, NR, 2)
     meta = {"last": last.reshape(nframes, 2 * NR),
             "clock": clock.reshape(nframes, 2 * NR)}
-    return frames[SETTLE_OUTPUTS:], meta
+    frames = frames[SETTLE_OUTPUTS:]
+    compare_with_cic(dut, frames)
+    return frames, meta
+
+
+COMPARED = []      # (capture, frame shift) for each CHAIN=cicshared comparison
+
+
+def compare_with_cic(dut, frames):
+    """Save this capture; for cicshared, require it to equal the cic run's.
+
+    The shared CIC's output strobe comes later in the output period, so the
+    first whole frame captured may be one output apart; the comparison tries
+    shifts of up to two frames and needs an exact match at one of them.
+    """
+    name = f"frames_nr{NR}_capture{CAPTURES}"
+    if CHAIN == "cic":
+        np.save(f"{name}_cic.npy", frames)
+        return
+    if CHAIN != "cicshared":
+        return
+    ref_path = f"{name}_cic.npy"
+    if not os.path.exists(ref_path):
+        dut._log.warning("no %s: run CHAIN=cic first", ref_path)
+        return
+    ref = np.load(ref_path)
+    n = min(len(ref), len(frames)) - 4
+    for shift in (0, 1, -1, 2, -2):
+        a = ref[2 + shift:2 + shift + n]
+        b = frames[2:2 + n]
+        if np.array_equal(a, b):
+            COMPARED.append((CAPTURES, shift))
+            dut._log.info("capture %d: %d frames x %d channels bit-identical "
+                          "to CHAIN=cic (frame shift %+d)", CAPTURES, n, NR,
+                          shift)
+            return
+    raise AssertionError(f"capture {CAPTURES} differs from CHAIN=cic")
 
 
 # --------------------------------------------------------------- analysis
@@ -250,7 +286,7 @@ async def test_stream_format_and_mapping(dut):
         power, k = tone_power(f, p, expected)
         peak = int(np.argmax(p))
         # Remove the CIC-only chain's known droop (the full chain is flat here).
-        droop = cic_response_db(expected) if CHAIN == "cic" else 0.0
+        droop = cic_response_db(expected) if CHAIN.startswith("cic") else 0.0
         levels.append(db(power) - droop)
         dut._log.info("ch%-2d tuned %.3f MHz: tone at %+.0f Hz, peak at %+.0f Hz",
                       c, tunings[c] / 1e6, expected, f[peak])
@@ -300,12 +336,12 @@ async def test_frequency_response(dut):
         rel = measured[c] - ref
         line = f"offset {o/1e3:6.1f} kHz (output {alias(o)/1e3:+6.1f} kHz): " \
                f"{rel:8.2f} dB"
-        if CHAIN == "cic":
+        if CHAIN.startswith("cic"):
             want = cic_response_db(o) - cic_response_db(offsets[0])
             line += f"   analytic {want:8.2f} dB"
             rows.append((o, rel, want))
         dut._log.info("RESPONSE %s", line)
-    if CHAIN == "cic":
+    if CHAIN.startswith("cic"):
         for o, rel, want in rows:
             if want > -90:
                 assert abs(rel - want) < 0.2, f"{o} Hz: {rel:.2f} vs {want:.2f}"
@@ -342,3 +378,10 @@ async def test_spurs(dut):
                   max(worst))
     assert max(worst) < -95
 
+
+@cocotb.test(skip=CHAIN != "cicshared")
+async def test_every_capture_matched_cic(dut):
+    """CHAIN=cicshared: every capture above equalled the CHAIN=cic run's."""
+    dut._log.info("compared captures: %s", COMPARED)
+    assert len(COMPARED) == CAPTURES and CAPTURES == 4, \
+        "missing CHAIN=cic reference; run `make compare-shared`"

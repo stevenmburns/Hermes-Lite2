@@ -6,3 +6,4 @@ rom_images.stamp
 *.mif
 sin_fine.txt
 *.log
+frames_*.npy
