@@ -1,0 +1,8 @@
+sim_build_*/
+results_*.log
+rx_stream.bin
+stim.mem
+rom_images.stamp
+*.mif
+sin_fine.txt
+*.log

@@ -20,7 +20,9 @@ DSP pass/fail margins), and `ethcommon.py` (byte-level TX/RX stream drivers
 shared by the Ethernet benches).
 
 `rx_chain` is a further testbench for the production receive path of
-`hl2b5up_main`; see `rx_chain/README.md`.
+`hl2b5up_main`; see `rx_chain/README.md`.  `many_rx` runs the production
+`radio.v` with up to 12 receivers, full or CIC-only chain; see
+`many_rx/README.md`.
 
 ## Setting up the environment
 
