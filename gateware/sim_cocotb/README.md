@@ -120,7 +120,7 @@ trace has to be in at compile time).  The benches are written for Verilator;
 ## Expected results
 
 All 23 test directories pass on a clean checkout with the environment above:
-80 cocotb tests in total, every one reported as `PASS=n FAIL=0 SKIP=0` in its
+82 cocotb tests in total, every one reported as `PASS=n FAIL=0 SKIP=0` in its
 `test-logs/<dir>.log`.  Wall time from a clean tree is roughly 1 min 20 s
 serial, ~20 s with `-j8`; most benches build and run in about a second, the
 slow ones are `eth_network` ~13 s, `rx2iq` ~11 s, `rx2` ~11 s.  The DSP benches
