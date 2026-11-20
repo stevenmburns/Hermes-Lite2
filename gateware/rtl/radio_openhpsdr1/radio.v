@@ -86,6 +86,10 @@ localparam M3 = 32'd16777216;
 
 localparam CALCTYPE = (NR > 5) ? 0 : 3;
 
+// Receiver arrays hold 12 channels: the 12 RX frequency registers
+// (CMDA_RXFREQ0..11) and nco_index decode reach channel 11 at most.
+localparam MAXRX = 12;
+
 input         clk                    ;
 input         clk_2x                 ;
 input         rst_all                ;
@@ -168,32 +172,32 @@ logic   [5:0]       rate;
 logic   [11:0]      adcpipe [0:4];
 
 
-logic [23:0]  rx_data_i [0:9];
-logic [23:0]  rx_data_q [0:9];
-logic         rx_data_rdy [0:9];
+logic [23:0]  rx_data_i [0:MAXRX-1];
+logic [23:0]  rx_data_q [0:MAXRX-1];
+logic         rx_data_rdy [0:MAXRX-1];
 
 logic [63:0]  freqcomp;
 logic [31:0]  freqcompp [0:2];
 logic [3:0]   chanp [0:2];
 
 
-logic [31:0]  rx_phase [0:9];    // The Rx phase calculated from the frequency sent by the PC.
+logic [31:0]  rx_phase [0:MAXRX-1];    // The Rx phase calculated from the frequency sent by the PC.
 logic [31:0]  tx_phase0;
 
-logic signed [17:0]   mixdata_i [0:9];
-logic signed [17:0]   mixdata_q [0:9];
+logic signed [17:0]   mixdata_i [0:MAXRX-1];
+logic signed [17:0]   mixdata_q [0:MAXRX-1];
 
 logic [3:0] nco_index;
 
 logic [33:0] debug;
 `ifdef VARCIC_QUAD
 // VARCIC_QUAD supports NR <= 4; channels above NR read as zero.
-wire               quad_cic_strobe [0:9];
-wire signed [15:0] quad_cic_i      [0:9];
-wire signed [15:0] quad_cic_q      [0:9];
+wire               quad_cic_strobe [0:MAXRX-1];
+wire signed [15:0] quad_cic_i      [0:MAXRX-1];
+wire signed [15:0] quad_cic_q      [0:MAXRX-1];
 wire               quad_var_strobe;
-wire signed [15:0] quad_var_i      [0:9];
-wire signed [15:0] quad_var_q      [0:9];
+wire signed [15:0] quad_var_i      [0:MAXRX-1];
+wire signed [15:0] quad_var_q      [0:MAXRX-1];
 `endif
 
 logic [5:0]  synced_receivers   = 6'h00;
@@ -585,11 +589,11 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
   );
 `endif
 
-  // Tie off the unused RX channel array entries (NR..9) so that every entry
+  // Tie off the unused RX channel array entries (NR..MAXRX-1) so that every entry
   // has a driver. The output mux only selects channels 0..last_chan, so these
   // values are don't-care and are pruned by synthesis.
   generate
-    for (c = NR; c < 10; c = c + 1) begin : RXUNUSED
+    for (c = NR; c < MAXRX; c = c + 1) begin : RXUNUSED
       assign rx_data_rdy[c] = 1'b0;
       assign rx_data_i[c]   = 24'h000000;
       assign rx_data_q[c]   = 24'h000000;
