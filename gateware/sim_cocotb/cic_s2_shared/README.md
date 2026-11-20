@@ -61,6 +61,25 @@ At the system level, `many_rx` with `CHAIN=cicshared` (`make compare-shared`)
 runs the production `radio.v` with 12 receivers. Every capture is
 bit-identical to the `CHAIN=cic` run.
 
+## Quartus results
+
+`hl2b5up_cicrx` on branch `exp/rx-capacity`, Quartus 25.1 Lite, seed 1. NR is
+set by the build script; the variant file still says 10.
+
+| Build | Logic elements | M9K | 9-bit multipliers | Worst slack |
+| --- | --- | --- | --- | --- |
+| 10 receivers, per-receiver `cic_s2` | 21,729 (97%) | 19 | 48 | +0.025 ns |
+| 12 receivers, per-receiver `cic_s2` | 24,120 (108%), does not fit | 18 | 56 | - |
+| 11 receivers, `CIC_SHARED` | 17,444 (78%) | - | 56 | +0.043 ns |
+| 12 receivers, `CIC_SHARED` | 18,127 (81%) | 33 | 56 | +0.043 ns |
+
+`cic_s2_shared` itself takes 1,935 logic elements and 14 M9Ks for 24 streams.
+It replaces 24 `cic_s2` instances of 354 logic elements each, about 8,500 in
+all. Each receiver is now 562 logic elements, its first CIC stage. Twelve is
+the most the command protocol can address (`CMDA_RXFREQ0..11`).
+
+These builds have only been compiled. None has been loaded on a radio.
+
 ## Files
 
 | File | Purpose |
