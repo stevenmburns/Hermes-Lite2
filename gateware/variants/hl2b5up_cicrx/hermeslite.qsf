@@ -60,3 +60,6 @@ set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 # Resolve rtl includes (clk_config.vh)
 set_global_assignment -name SEARCH_PATH ../../rtl
+# Seed 1 misses setup on clock_153p6MHz by 0.071 ns at 12 receivers (mix2
+# MIXPAIR[5] state); seeds 2-5 pass. Seed 2: +0.268 ns there, +0.043 worst.
+set_global_assignment -name SEED 2
