@@ -80,12 +80,18 @@ async def command(dut, addr, data):
     await ClockCycles(dut.clk, 6)
 
 
-async def run_capture(dut, tunings, outputs):
+COMMAND_CLOCKS = 7  # clocks per command() call
+
+
+async def run_capture(dut, tunings, outputs, compare=True, pad_to=None):
     """Reset, tune channel c to tunings[c] Hz, capture `outputs` frames.
 
     Returns (frames, meta): frames[k] is an (NR, 2) array of signed (I, Q) for
     output frame k, after SETTLE_OUTPUTS frames are dropped; meta holds the
-    raw per-word timing for the stream-format checks.
+    raw per-word timing for the stream-format checks. compare=False skips
+    the CHAIN=cic / cicshared capture comparison. pad_to=n waits as long as
+    n frequency commands would take, so reset is released on the same clock
+    whatever NR is (the ADC replay runs throughout).
     """
     dut.rst.value = 1
     dut.capture.value = 0
@@ -102,6 +108,8 @@ async def run_capture(dut, tunings, outputs):
     await command(dut, CMDA_GENERAL, general)
     for c, f in enumerate(tunings):
         await command(dut, RXFREQ_ADDR[c], int(f))
+    if pad_to is not None and pad_to > len(tunings):
+        await ClockCycles(dut.clk, COMMAND_CLOCKS * (pad_to - len(tunings)))
     dut.rst.value = 0
     # Let every stage fill before recording.
     await ClockCycles(dut.clk, OUT_PERIOD * 32)
@@ -129,7 +137,8 @@ async def run_capture(dut, tunings, outputs):
     meta = {"last": last.reshape(nframes, 2 * NR),
             "clock": clock.reshape(nframes, 2 * NR)}
     frames = frames[SETTLE_OUTPUTS:]
-    compare_with_cic(dut, frames)
+    if compare:
+        compare_with_cic(dut, frames)
     return frames, meta
 
 
@@ -379,7 +388,74 @@ async def test_spurs(dut):
     assert max(worst) < -95
 
 
-@cocotb.test(skip=CHAIN != "cicshared")
+# Cross-build comparison (`make compare-builds`). Channels 0-9 get the same
+# tuning whatever NR is, so a 10-receiver and a 12-receiver radio.v can be
+# compared channel by channel. Channels 10 and 11 copy channels 8 and 9, which
+# are in the same mix2 slots, so they must match them bit for bit.
+XBUILD_TUNINGS = [
+    [1_030_000 + 2_310_000 * c for c in range(10)],
+    [3_570_000 + 1_870_000 * c for c in range(10)],
+]
+
+
+def xbuild_tunings(base):
+    t = list(base)
+    t += [t[8], t[9]]          # channels 10 and 11, when NR is 12
+    return t[:NR]
+
+
+def write_xbuild_stim():
+    """A tone near every channel of both tuning sets, plus seeded noise.
+
+    It does not depend on NR, so every build sees the same ADC samples. The
+    noise keeps all the low-order bits of every stage busy.
+    """
+    n = np.arange(STIM_LEN)
+    x = np.zeros(STIM_LEN)
+    for k, base in enumerate(XBUILD_TUNINGS):
+        for c, t in enumerate(base):
+            f = tone_freq(t + 4_000 + 3_100 * c + 1_700 * k)
+            x += 90.0 * np.cos(2 * np.pi * (f / FS) * n + 0.37 * c + k)
+    x += np.random.default_rng(20261122).normal(0.0, 250.0, STIM_LEN)
+    x = np.clip(np.round(x), -2048, 2047).astype(np.int64)
+    with open("stim.mem", "w") as fd:
+        for v in x:
+            fd.write(f"{v & 0xFFF:03x}\n")
+
+
+XBUILD = os.environ.get("XBUILD") == "1"
+
+
+@cocotb.test(skip=not XBUILD)
+async def test_cross_build_capture(dut):
+    """XBUILD=1: save channels 0-9 of two captures for compare_builds.py.
+
+    It must be the only test in the run (the Makefile target filters for it):
+    radio.v never resets the receivers' filter state, so captures can only be
+    compared across builds when both start from power-up and see the same
+    commands in the same order.
+    """
+    assert CAPTURES == 0, "run this test alone, from power-up state"
+    assert NR >= 10, "the comparison covers channels 0-9"
+    write_xbuild_stim()
+    for k, base in enumerate(XBUILD_TUNINGS):
+        frames, _ = await run_capture(dut, xbuild_tunings(base), outputs=2048,
+                                      compare=False, pad_to=len(RXFREQ_ADDR))
+        nonzero = float(np.mean(frames != 0))
+        assert nonzero > 0.9, f"capture {k}: output mostly zero"
+        if NR == 12:
+            for c, ref in ((10, 8), (11, 9)):
+                diff = int(np.sum(frames[:, c, :] != frames[:, ref, :]))
+                assert diff == 0, f"capture {k}: channel {c} differs from {ref}"
+            dut._log.info("capture %d: channels 10, 11 bit-identical to 8, 9",
+                          k)
+        path = f"xbuild_{CHAIN}_nr{NR}_capture{k}.npy"
+        np.save(path, frames[:, :10, :])
+        dut._log.info("capture %d: saved %s, %d frames, %.3f nonzero", k,
+                      path, len(frames), nonzero)
+
+
+@cocotb.test(skip=CHAIN != "cicshared" or XBUILD)
 async def test_every_capture_matched_cic(dut):
     """CHAIN=cicshared: every capture above equalled the CHAIN=cic run's."""
     dut._log.info("compared captures: %s", COMPARED)

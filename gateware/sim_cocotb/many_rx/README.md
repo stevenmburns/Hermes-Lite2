@@ -22,6 +22,8 @@ make                     # CHAIN=full NR=12: cic, varcic_mem, firX8R8 at 192 ksp
 make CHAIN=cic NR=12     # receiver_ciconly.v, the hl2b5up_cicrx chain
 make compare-shared NR=12   # CHAIN=cic, then CHAIN=cicshared (CIC_SHARED),
                          # which must match it bit for bit, capture by capture
+make compare-builds      # 10-receiver hl2b5up_cicrx vs the 12-receiver builds,
+                         # channel by channel (see "Cross-build comparison")
 make NR=4                # 4 receivers: radio.v uses CALCTYPE 3 at NR <= 5, 0 above
 make RADIO_V=/path/to/radio.v   # test another copy of radio.v
 ```
@@ -36,6 +38,7 @@ A run of the four tests takes about 1 to 2.5 minutes.
 | `test_stream_format_and_mapping` | One tone per channel. Each tone appears in its own channel only, at the right frequency. The stream carries 2 x NR words per output with `tlast` on the last, one output every 400 clocks |
 | `test_frequency_response` | One ADC tone, with channel c tuned so the tone sits at offset c. This measures NR points of the response in one run, including offsets that alias. `CHAIN=cic` must match the analytic CIC response within 0.2 dB. `CHAIN=full` must be flat within 0.5 dB to 20 kHz, with aliases at least 80 dB down from 125 kHz |
 | `test_spurs` | One tone in every channel. The worst spur within ±0.4 x the sample rate must be below -95 dBc |
+| `test_cross_build_capture` | Only with `XBUILD=1`, alone (`make compare-builds`). Two captures with channels 0-9 tuned the same whatever NR is, and channels 10 and 11 copying 8 and 9, which must match them bit for bit. Saves channels 0-9 for `compare_builds.py` |
 
 The slot test must be the first capture after power-up. `radio.v` never
 resets the receivers' filter state, and the pruned CICs do not cancel
@@ -89,6 +92,25 @@ reference is missing. With 12 receivers all four captures match, up to 4,091
 frames x 12 channels. The first whole frame may be one output apart, because
 the shared stage's strobe comes 59 clocks later in the output period.
 
+**Cross-build comparison.** `make compare-builds` checks that going from 10
+to 12 receivers changes nothing for the first 10. It runs
+`test_cross_build_capture` for the 10-receiver `hl2b5up_cicrx` chain
+(`CHAIN=cic NR=10`), the same chain with 12 receivers (`CHAIN=cic NR=12`) and
+the 12-receiver build as shipped (`CHAIN=cicshared NR=12`). The ADC input is a
+tone near every channel plus seeded noise, the same for every build.
+`compare_builds.py` then compares channels 0-9 with the 10-receiver run's.
+
+Result: both 12-receiver builds match the 10-receiver build bit for bit, in
+both captures (2,043 frames x 10 channels each, no frame shift), and in both
+channels 10 and 11 equal channels 8 and 9.
+
+Commands take 7 clocks each and the ADC replay runs during reset, so with more
+receivers to tune, reset used to end later in the stimulus. The first run of
+this comparison failed on every frame for that reason (14 clocks for 2 extra
+receivers), which also shows that it catches a difference. The test now pads
+the command sequence to 12 commands, so reset ends on the same clock for any
+NR.
+
 These are simulation results. Nothing here has been measured on a radio.
 
 ## Files
@@ -97,4 +119,5 @@ These are simulation results. Nothing here has been measured on a radio.
 | --- | --- |
 | `tb_many_rx.sv` | Clocks, ADC replay, `radio.v`, upstream capture to `rx_stream.bin` |
 | `test_many_rx.py` | Command-bus driver, spectrum analysis, the tests |
+| `compare_builds.py` | Compares two `test_cross_build_capture` runs, channels 0-9 |
 | `Makefile` | `NR`, `CHAIN` and `RADIO_V`. Reuses `../rx_chain/altsyncram_model.v` and `mif2mem.py` |

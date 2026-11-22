@@ -7,3 +7,4 @@ rom_images.stamp
 sin_fine.txt
 *.log
 frames_*.npy
+xbuild_*.npy

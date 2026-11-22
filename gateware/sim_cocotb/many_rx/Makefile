@@ -14,7 +14,7 @@ NR ?= 12
 #              Each capture is compared bit for bit with the CHAIN=cic run's,
 #              which `make compare-shared` runs first.
 CHAIN ?= full
-export NR CHAIN
+export NR CHAIN XBUILD COCOTB_TEST_FILTER
 
 SIM_BUILD ?= sim_build_$(CHAIN)_nr$(NR)
 
@@ -84,5 +84,16 @@ compare-shared:
 	$(MAKE) CHAIN=cic NR=$(NR) SIM_BUILD=sim_build_cic_nr$(NR)
 	$(MAKE) CHAIN=cicshared NR=$(NR) SIM_BUILD=sim_build_cicshared_nr$(NR)
 
+# The 10-receiver hl2b5up_cicrx build (per-receiver cic_s2) against the
+# 12-receiver one (CIC_SHARED), channel by channel for channels 0-9, plus
+# the 12-receiver build without CIC_SHARED. Only test_cross_build_capture runs.
+.PHONY: compare-builds
+compare-builds:
+	$(MAKE) CHAIN=cic NR=10 SIM_BUILD=sim_build_cic_nr10 XBUILD=1 COCOTB_TEST_FILTER=test_cross_build_capture
+	$(MAKE) CHAIN=cic NR=12 SIM_BUILD=sim_build_cic_nr12 XBUILD=1 COCOTB_TEST_FILTER=test_cross_build_capture
+	$(MAKE) CHAIN=cicshared NR=12 SIM_BUILD=sim_build_cicshared_nr12 XBUILD=1 COCOTB_TEST_FILTER=test_cross_build_capture
+	$(PYTHON) compare_builds.py cic_nr10 cic_nr12
+	$(PYTHON) compare_builds.py cic_nr10 cicshared_nr12
+
 clean::
-	rm -f rom_images.stamp stim.mem rx_stream.bin *.mif sin_fine.txt frames_*.npy
+	rm -f rom_images.stamp stim.mem rx_stream.bin *.mif sin_fine.txt frames_*.npy xbuild_*.npy
