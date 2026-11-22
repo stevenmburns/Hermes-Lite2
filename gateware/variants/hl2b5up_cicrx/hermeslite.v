@@ -95,10 +95,10 @@ module hermeslite (
   hermeslite_core #(
     .BOARD        (5                                    ),
     .VERSION_MAJOR_OVR (75                              ),
-    .VERSION_MINOR_OVR (10                               ),
+    .VERSION_MINOR_OVR (12                               ),
     .IP           ({8'd0,8'd0,8'd0,8'd0}                ),
     .MAC          ({8'h00,8'h1c,8'hc0,8'ha2,8'h13,8'hdd}),
-    .NR           (10                                   ),
+    .NR           (12                                   ),
     .NT           (0                                    ),
     .UART         (0                                    ),
     .ATU          (0                                    ),

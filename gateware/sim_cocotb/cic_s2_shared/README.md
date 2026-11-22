@@ -63,8 +63,9 @@ bit-identical to the `CHAIN=cic` run.
 
 ## Quartus results
 
-`hl2b5up_cicrx` on branch `exp/rx-capacity`, Quartus 25.1 Lite, seed 1. NR is
-set by the build script; the variant file still says 10.
+`hl2b5up_cicrx` on branch `exp/rx-capacity`, Quartus 25.1 Lite, seed 1. NR was
+set by the build script for these runs. The variant now defaults to 12
+receivers and reports gateware version 75.12 (it was 10 receivers, 75.10).
 
 | Build | Logic elements | M9K | 9-bit multipliers | Worst slack |
 | --- | --- | --- | --- | --- |
