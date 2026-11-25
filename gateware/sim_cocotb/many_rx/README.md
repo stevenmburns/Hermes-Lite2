@@ -22,6 +22,7 @@ make                     # CHAIN=full NR=12: cic, varcic_mem, firX8R8 at 192 ksp
 make CHAIN=cic NR=12     # receiver_ciconly.v, the hl2b5up_cicrx chain
 make compare-shared NR=12   # CHAIN=cic, then CHAIN=cicshared (CIC_SHARED),
                          # which must match it bit for bit, capture by capture
+make CHAIN=cicfir NR=12  # CIC_SHARED + CIC_FIR: cic_fir_shared, the hl2b5up_cicfir chain
 make compare-builds      # 10-receiver hl2b5up_cicrx vs the 12-receiver builds,
                          # channel by channel (see "Cross-build comparison")
 make NR=4                # 4 receivers: radio.v uses CALCTYPE 3 at NR <= 5, 0 above
@@ -36,7 +37,7 @@ A run of the four tests takes about 1 to 2.5 minutes.
 | --- | --- |
 | `test_same_tuning_slot_classes_identical` | All channels tuned to one frequency. Channels in the same mix2 time slot give bit-identical output, and the two slots agree in power within 0.01 dB |
 | `test_stream_format_and_mapping` | One tone per channel. Each tone appears in its own channel only, at the right frequency. The stream carries 2 x NR words per output with `tlast` on the last, one output every 400 clocks |
-| `test_frequency_response` | One ADC tone, with channel c tuned so the tone sits at offset c. This measures NR points of the response in one run, including offsets that alias. `CHAIN=cic` must match the analytic CIC response within 0.2 dB. `CHAIN=full` must be flat within 0.5 dB to 20 kHz, with aliases at least 80 dB down from 125 kHz |
+| `test_frequency_response` | One ADC tone, with channel c tuned so the tone sits at offset c. This measures NR points of the response in one run, including offsets that alias. `CHAIN=cic` must match the analytic CIC response within 0.2 dB, and `CHAIN=cicfir` the analytic CIC and FIR response (from `../cic_fir/coefs.txt`), with aliases at least 80 dB down from 125 kHz. `CHAIN=full` must be flat within 0.5 dB to 20 kHz, with aliases at least 80 dB down from 125 kHz |
 | `test_spurs` | One tone in every channel. The worst spur within ±0.4 x the sample rate must be below -95 dBc |
 | `test_cross_build_capture` | Only with `XBUILD=1`, alone (`make compare-builds`). Two captures with channels 0-9 tuned the same whatever NR is, and channels 10 and 11 copying 8 and 9, which must match them bit for bit. Saves channels 0-9 for `compare_builds.py` |
 
@@ -51,8 +52,8 @@ for bit.
 
 ## Results
 
-All four tests pass for `CHAIN=full NR=12`, `CHAIN=cic NR=12` and
-`CHAIN=full NR=4`.
+All four tests pass for `CHAIN=full NR=12`, `CHAIN=cic NR=12`,
+`CHAIN=cicfir NR=12` and `CHAIN=full NR=4`.
 
 **A bug found above 10 receivers.** `adcpipe`, the per-pair ADC fanout, had
 five entries. With 11 or 12 receivers the sixth mixer pair read past its end,
@@ -64,24 +65,31 @@ no bitstream was ever built that way. Running the bench against the earlier
 Frequency response at 192 ksps, relative to a 5 kHz offset. An "output" in
 brackets is where an offset past ±96 kHz aliases to:
 
-| Offset | Full chain | CIC only (measured) | CIC only (analytic) |
-| --- | --- | --- | --- |
-| 20 kHz | -0.07 dB | -0.58 dB | -0.58 dB |
-| 40 kHz | -0.07 dB | -2.48 dB | -2.48 dB |
-| 60 kHz | -0.11 dB | -5.73 dB | -5.73 dB |
-| 85 kHz | -0.29 dB | -11.99 dB | -11.99 dB |
-| 95 kHz | -5.95 dB | -15.29 dB | -15.29 dB |
-| 110 kHz (-82 kHz) | -90.6 dB | -21.30 dB | -21.30 dB |
-| 125 kHz (-67 kHz) | -97.0 dB | -28.89 dB | -28.89 dB |
-| 150 kHz (-42 kHz) | -99.8 dB | -46.97 dB | -46.97 dB |
-| 175 kHz (-17 kHz) | -94.1 dB | -81.44 dB | -81.42 dB |
-| 250 kHz (+58 kHz) | -94.9 dB | -56.10 dB | -56.10 dB |
+| Offset | Full chain | CIC only (measured) | CIC only (analytic) | CIC + FIR (measured) | CIC + FIR (analytic) |
+| --- | --- | --- | --- | --- | --- |
+| 20 kHz | -0.07 dB | -0.58 dB | -0.58 dB | -0.03 dB | -0.03 dB |
+| 40 kHz | -0.07 dB | -2.48 dB | -2.48 dB | -0.10 dB | -0.10 dB |
+| 60 kHz | -0.11 dB | -5.73 dB | -5.73 dB | -0.22 dB | -0.22 dB |
+| 75 kHz | | -9.17 dB | -9.17 dB | -0.35 dB | -0.35 dB |
+| 85 kHz | -0.29 dB | -11.99 dB | -11.99 dB | -1.69 dB | -1.69 dB |
+| 95 kHz | -5.95 dB | -15.29 dB | -15.29 dB | -8.43 dB | -8.43 dB |
+| 110 kHz (-82 kHz) | -90.6 dB | -21.30 dB | -21.30 dB | -40.96 dB | -40.96 dB |
+| 125 kHz (-67 kHz) | -97.0 dB | -28.89 dB | -28.89 dB | -99.1 dB | -99.4 dB |
+| 150 kHz (-42 kHz) | -99.8 dB | -46.97 dB | -46.97 dB | -111.5 dB | -115.6 dB |
+| 175 kHz (-17 kHz) | -94.1 dB | -81.44 dB | -81.42 dB | -110.0 dB | -112.5 dB |
+| 250 kHz (+58 kHz) | -94.9 dB | -56.10 dB | -56.10 dB | -105.5 dB | -106.8 dB |
 
 The CIC-only chain droops 12 dB by 85 kHz, and signals from 96 to 150 kHz
-away alias into the band only 15 to 47 dB down.
+away alias into the band only 15 to 47 dB down. With `cic_fir_shared`
+(`CHAIN=cicfir`) the band is flat to -0.35 dB at 75 kHz and the same signals
+are 99 dB or more down; below about -100 dB the measurement reaches the
+bench's noise floor, so it reads a little above the analytic value. The 82 kHz
+point is the FIR's transition band, outside the +-75 kHz it is designed for. The
+full chain stays the better filter (flat to 85 kHz).
 
 Worst spur over all channels: -103.3 dBc for full, NR=4 (CALCTYPE 3);
--103.0 dBc for full, NR=12 (CALCTYPE 0); -104.6 dBc for CIC only, NR=12. In
+-103.0 dBc for full, NR=12 (CALCTYPE 0); -104.6 dBc for CIC only, NR=12;
+-103.8 dBc for CIC + FIR, NR=12. In
 this test the cheaper CALCTYPE 0 sine and cosine cost under 0.5 dB.
 
 **Shared second CIC stage.** `CHAIN=cicshared` builds the CIC-only chain

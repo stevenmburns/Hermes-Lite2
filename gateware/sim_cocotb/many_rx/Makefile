@@ -13,6 +13,8 @@ NR ?= 12
 #   cicshared  the same, with CIC_SHARED: one cic_s2_shared for all receivers.
 #              Each capture is compared bit for bit with the CHAIN=cic run's,
 #              which `make compare-shared` runs first.
+#   cicfir     CIC_SHARED and CIC_FIR: cic_fir_shared (second CIC to 960 kHz,
+#              then a /5 FIR) for all receivers (hl2b5up_cicfir).
 CHAIN ?= full
 export NR CHAIN XBUILD COCOTB_TEST_FILTER
 
@@ -49,8 +51,13 @@ else ifeq ($(CHAIN),cicshared)
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/receiver_ciconly.v
 VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic_s2_shared.v
 COMPILE_ARGS += +define+CIC_SHARED=1
+else ifeq ($(CHAIN),cicfir)
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/receiver_ciconly.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cic_fir_shared.v
+COMPILE_ARGS += +define+CIC_SHARED=1 +define+CIC_FIR=1
+COMPILE_ARGS += +incdir+$(TOPDIR)/radio_openhpsdr1
 else
-$(error CHAIN must be full, cic or cicshared)
+$(error CHAIN must be full, cic, cicshared or cicfir)
 endif
 
 TOPLEVEL = tb_many_rx

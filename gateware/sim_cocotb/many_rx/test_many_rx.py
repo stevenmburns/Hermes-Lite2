@@ -3,8 +3,9 @@
 tb_many_rx.sv instantiates radio.v with NR receivers, so the mixer-pair
 mapping, the frequency-register decode, the per-channel arrays and the
 upstream multiplexer are the production code. CHAIN picks the receiver:
-"full" (cic, varcic_mem, firX8R8) or "cic" (receiver_ciconly.v, the
-hl2b5up_cicrx chain, fixed 192 ksps).
+"full" (cic, varcic_mem, firX8R8), "cic" (receiver_ciconly.v, the
+hl2b5up_cicrx chain, fixed 192 ksps), "cicshared" (the same with one shared
+second CIC) or "cicfir" (cic_fir_shared: second CIC to 960 kHz and a /5 FIR).
 
 The tests rely on retuning instead of a bit-exact model. The chain arithmetic
 is already checked bit-exactly by rx_chain (CALCTYPE 3) and the sincos bench
@@ -209,14 +210,30 @@ def db(x):
     return 10 * np.log10(x)
 
 
+def _fir_coefs():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cic_fir", "coefs.txt")
+    with open(path) as fp:
+        fp.readline()
+        return np.array([int(l) for l in fp if l.strip()], dtype=float)
+
+
+FIR_H = _fir_coefs() if CHAIN == "cicfir" else None
+
+
 def cic_response_db(offset):
-    """Analytic gain of receiver_ciconly.v: CIC N=4 R=16, then N=4 R=25."""
+    """Analytic gain of receiver_ciconly.v: CIC N=4 R=16, then N=4 R=25.
+    For CHAIN=cicfir: CIC N=4 R=16, CIC N=4 R=5, then the /5 FIR at 960 kHz."""
     def stage(f, rate_in, r, n):
         x = np.pi * f / rate_in
         if abs(np.sin(x)) < 1e-15:
             return 1.0
         return abs(np.sin(r * x) / (r * np.sin(x))) ** n
-    h = stage(offset, FS, 16, 4) * stage(offset, FS / 16, 25, 4)
+    if CHAIN == "cicfir":
+        k = np.arange(len(FIR_H))
+        fir = abs(np.exp(-2j * np.pi * offset / 960e3 * k) @ FIR_H) / FIR_H.sum()
+        h = stage(offset, FS, 16, 4) * stage(offset, FS / 16, 5, 4) * fir
+    else:
+        h = stage(offset, FS, 16, 4) * stage(offset, FS / 16, 25, 4)
     return 20 * np.log10(h)
 
 
@@ -325,9 +342,10 @@ async def test_frequency_response(dut):
 
     Measures the receiver's response at NR offsets in one run, including
     offsets past the output Nyquist frequency, which alias. Levels are
-    relative to the 5 kHz channel. For CHAIN=cic they must match the
-    analytic CIC response; for CHAIN=full, the passband must be flat and the
-    aliases far down.
+    relative to the 5 kHz channel. For the CIC-only chains they must match
+    the analytic response (for cicfir, CICs and FIR, and offsets from 125 kHz,
+    which alias onto the band, must also be 80 dB down); for CHAIN=full, the
+    passband must be flat and the aliases far down.
     """
     offsets = RESPONSE_OFFSETS[:NR]
     tone = tone_freq(14_070_000)
@@ -354,6 +372,8 @@ async def test_frequency_response(dut):
         for o, rel, want in rows:
             if want > -90:
                 assert abs(rel - want) < 0.2, f"{o} Hz: {rel:.2f} vs {want:.2f}"
+            if CHAIN == "cicfir" and o >= 125_000:
+                assert rel < -80, f"alias from {o} Hz only {rel:.1f} dB down"
     else:
         for o, rel in zip(offsets, [m - ref for m in measured]):
             if o <= 20_000:

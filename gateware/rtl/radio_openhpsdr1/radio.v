@@ -202,7 +202,9 @@ wire signed [15:0] quad_var_q      [0:MAXRX-1];
 
 `ifdef CIC_SHARED
 // CIC_SHARED (receiver_ciconly.v only): one cic_s2_shared does the second CIC
-// stage of every receiver; see the instance after the receiver loop.
+// stage of every receiver; see the instance after the receiver loop. With
+// CIC_FIR as well, cic_fir_shared takes its place: a second CIC to 960 kHz
+// and a decimate-by-5 FIR, for +-75 kHz free of aliases instead of +-35 kHz.
 wire               shr_cic_strobe [0:MAXRX-1];
 wire signed [17:0] shr_cic_i      [0:MAXRX-1];
 wire signed [17:0] shr_cic_q      [0:MAXRX-1];
@@ -612,7 +614,11 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
       assign shr_q[c] = shr_out[(2*c+1)*24 +: 24];
     end
   endgenerate
+`ifdef CIC_FIR
+  cic_fir_shared #(.NS(2*NR)) shared_cic_fir (
+`else
   cic_s2_shared #(.NS(2*NR)) shared_cic_s2 (
+`endif
     .clock     (clk),
     .in_strobe (shr_cic_strobe[0]),
     .in_data   (shr_in),
