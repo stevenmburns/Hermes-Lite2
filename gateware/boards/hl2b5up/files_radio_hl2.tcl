@@ -22,6 +22,7 @@ set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/vna_scanner.
 
 # Transmit DSP
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/cpl_cordic.v
+set_global_assignment -name VERILOG_FILE ../../rtl/nco/tx_nco_upconv.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/FirInterp8_1024.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/firram36I_1024.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/CicInterpM5.v
