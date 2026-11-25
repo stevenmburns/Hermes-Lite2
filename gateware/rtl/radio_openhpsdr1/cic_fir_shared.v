@@ -145,13 +145,15 @@ module cic_fir_shared #(
 
   wire [8:0] raddr = {rj, base - rk};
 
-  // Pipeline: t0 address, t1 RAM/ROM out, t2 product, t3 accumulate.
+  // Pipeline: t0 address, t1 RAM/ROM out, t2 product, t3 accumulate,
+  // t4 shift, saturate and store.
   reg signed [17:0] coef_q = 18'sd0;
   reg        v1 = 1'b0, v2 = 1'b0;
   reg        f1 = 1'b0, f2 = 1'b0;               // first tap
   reg        l1 = 1'b0, l2 = 1'b0;               // last tap
   reg [1:0]  j1 = 2'd0, j2 = 2'd0;
   reg        fin_strobe = 1'b0;
+  reg        fin_d = 1'b0;
 
   always @(posedge clock) begin
     coef_q <= fir_coef(rk);
@@ -160,7 +162,8 @@ module cic_fir_shared #(
     l1 <= run && rk == FIR_NTAPS - 1; l2 <= l1;
     j1 <= rj;              j2 <= j1;
     fin_strobe <= v2 && l2 && (j2 == S - 1);
-    out_strobe <= fin_strobe;
+    fin_d      <= fin_strobe;               // the unit stores its result a clock after the sum
+    out_strobe <= fin_d;
   end
 
   wire [NSP*24-1:0] fir_out;
@@ -215,19 +218,29 @@ module cic_fir_unit #(
   reg signed [43:0] acc = 44'sd0;
   always @(posedge clock) prod <= x * coef;
 
-  // acc_next is the sum including this product; on the last tap it is the result.
-  wire signed [43:0] acc_next = (f2 ? 44'sd0 : acc) + {{8{prod[35]}}, prod};
-  wire signed [43:0] rounded  = acc_next + (44'sd1 <<< (SHIFT - 1));
-  wire signed [43-SHIFT:0] y  = rounded >>> SHIFT;
+  // acc_next is the sum including this product; on the last tap it is the
+  // result. Each sum starts from the rounding constant, so rounding costs no
+  // adder, and the result is registered before it is shifted and saturated.
+  localparam signed [43:0] RND = 44'sd1 <<< (SHIFT - 1);
+  wire signed [43:0] acc_next = (f2 ? RND : acc) + {{8{prod[35]}}, prod};
+
+  reg signed [43:0] res = 44'sd0;
+  reg [1:0]         res_j = 2'd0;
+  reg               res_v = 1'b0;
+
+  wire signed [43-SHIFT:0] y = res >>> SHIFT;
   localparam signed [43-SHIFT:0] YMAX = 8388607;
   localparam signed [43-SHIFT:0] YMIN = -8388608;
   wire [23:0] ysat = (y > YMAX) ? 24'h7fffff : (y < YMIN) ? 24'h800000 : y[23:0];
 
   always @(posedge clock) begin
-    if (v2) begin
-      acc <= acc_next;
-      if (l2) out_data[j2*24 +: 24] <= ysat;
+    if (v2) acc <= acc_next;
+    res_v <= v2 && l2;
+    if (v2 && l2) begin
+      res   <= acc_next;
+      res_j <= j2;
     end
+    if (res_v) out_data[res_j*24 +: 24] <= ysat;
   end
 
 endmodule
@@ -324,10 +337,14 @@ module cic_r5_lane #(
     ck_d <= ck;
   end
 
-  wire [27:0]        diff = carry - cq;
-  wire signed [27:0] dsg  = diff;
-  // Round to 18 bits: |x * 625| < 2^27, so the result fits after >> 10.
-  wire signed [27:0] drnd = dsg + 28'sd512;
+  wire [27:0] diff = carry - cq;
+
+  // The last comb's output is registered, then rounded to 18 bits a clock
+  // later: |x * 625| < 2^27, so the result fits after >> 10.
+  reg [27:0]   d4 = 28'd0;
+  reg [AW-1:0] d4_s = {AW{1'b0}};
+  reg          d4_v = 1'b0;
+  wire signed [27:0] drnd = $signed(d4) + 28'sd512;
 
   always @(posedge clock) begin
     if (upd && upd_dec) begin
@@ -339,16 +356,21 @@ module cic_r5_lane #(
 
   always @(posedge clock) begin
     done <= 1'b0;
+    d4_v <= cv && ck_d == 3'd4;
     if (cv) begin
       if (ck_d == 3'd0) begin
         carry <= cq;
       end else begin
         carry <= diff;
         if (ck_d == 3'd4) begin
-          out_data[cs_d*18 +: 18] <= drnd[27:10];
-          if (cs_d == L - 1) done <= 1'b1;
+          d4   <= diff;
+          d4_s <= cs_d;
         end
       end
+    end
+    if (d4_v) begin
+      out_data[d4_s*18 +: 18] <= drnd[27:10];
+      if (d4_s == L - 1) done <= 1'b1;
     end
   end
 
