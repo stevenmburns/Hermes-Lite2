@@ -64,5 +64,7 @@ set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_
 # Resolve rtl includes (clk_config.vh, cic_fir_coefs.vh)
 set_global_assignment -name SEARCH_PATH ../../rtl
 set_global_assignment -name SEARCH_PATH ../../rtl/radio_openhpsdr1
-# Seed carried over from hl2b5up_cicrx; not yet checked for this build.
-set_global_assignment -name SEED 2
+# Seeds 2 and 3 both meet timing (worst +0.043 ns, clock_txoutputfast, as in
+# every build). Seed 3 leaves +0.231 ns on clock_153p6MHz against seed 2's
+# +0.073, and +2.20 ns on clock_76p8MHz.
+set_global_assignment -name SEED 3
