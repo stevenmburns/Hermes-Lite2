@@ -7,3 +7,4 @@ cic_out.bin
 fir_out.bin
 up_out.bin
 sim_build*/
+regress_*.log

@@ -104,6 +104,7 @@ parameter       IP = {8'd0,8'd0,8'd0,8'd0};
 parameter       MAC = {8'h00,8'h1c,8'hc0,8'ha2,8'h13,8'hdd};
 parameter       NR = 4; // Recievers
 parameter       NT = 1; // Transmitters
+parameter       VNA = 1; // FPGA VNA scanner (0 leaves it out; PC-driven VNA still works)
 parameter       CLK_FREQ = 76800000;
 
 // UART Type 0 is none, 1 is JI1UDD HR50
@@ -887,6 +888,7 @@ ad9866 #(.FAST_LNA(FAST_LNA)) ad9866_i (
 radio #(
   .NR(NR),
   .NT(NT),
+  .VNA(VNA),
   .LRDATA(LRDATA),
   .CLK_FREQ(CLK_FREQ),
   .HL2LINK(HL2LINK)

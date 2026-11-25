@@ -452,7 +452,8 @@ logic [31:0]  rx0_phase;    // For VNAscan, equals tx0_phase; else rx_phase[0].
 // The VNA bit must be turned on for either.  So VNA is one for either method, and zero otherwise.
 // The scan method depends on the number of VNA scan points, vna_count.  This is zero for the original method.
 // wire VNA_SCAN_PC   = vna & (vna_count == 0);    // The PC changes the frequency for VNA.
-wire VNA_SCAN_FPGA = vna & (vna_count != 0);    // The firmware changes the frequency.
+// VNA = 0 builds without the FPGA scanner; PC-driven VNA mode still works.
+wire VNA_SCAN_FPGA = (VNA != 0) & vna & (vna_count != 0);    // The firmware changes the frequency.
 
 wire signed [17:0] cordic_data_I, cordic_data_Q;
 wire vna_strobe, rx0_strobe;
@@ -462,6 +463,17 @@ assign rx_data_rdy[0] = VNA_SCAN_FPGA ? vna_strobe : rx0_strobe;
 assign rx_data_i[0] = VNA_SCAN_FPGA ? vna_out_I : rx0_out_I;
 assign rx_data_q[0] = VNA_SCAN_FPGA ? vna_out_Q : rx0_out_Q;
 
+generate if (VNA == 0) begin: NOVNA
+  // What vna_scanner does outside an FPGA scan, with the same one-clock delay.
+  assign vna_strobe = 1'b0;
+  assign vna_out_I  = 24'sd0;
+  assign vna_out_Q  = 24'sd0;
+  always @(posedge clk) begin
+    tx0_phase      <= tx_phase0;
+    rx0_phase      <= rx_phase[0];
+    tx0_phase_zero <= 2'b00;
+  end
+end else begin: WITHVNA
 // This module is a replacement for receiver zero when the FPGA scans in VNA mode.
 vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output for VNA_SCAN_FPGA
     //control
@@ -482,6 +494,7 @@ vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (  // use this output f
     .rx0_phase(rx0_phase),
     .vna_count(vna_count)
     );
+end endgenerate
 
 
   // One receiver minimum
