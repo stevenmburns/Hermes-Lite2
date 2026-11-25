@@ -22,7 +22,8 @@ shared by the Ethernet benches).
 `rx_chain` and `tx_chain` are further testbenches for the production receive
 and transmit interpolation paths of `hl2b5up_main`; see `rx_chain/README.md`
 and `tx_chain/README.md`.  `many_rx` runs the production `radio.v` with up to
-12 receivers, full or CIC-only chain; see `many_rx/README.md`.
+12 receivers, full or CIC-only chain; see `many_rx/README.md`.  `adc_meter` tests the ADC
+clip count and peak meter; see `adc_meter/README.md`.
 
 ## Setting up the environment
 

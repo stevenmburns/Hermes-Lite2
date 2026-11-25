@@ -42,6 +42,7 @@ module control (
   output                     rffe_ad9866_sclk   ,
   output                     rffe_ad9866_sen_n  ,
   input        signed [15:0] debug              ,
+  input               [31:0] adc_meter          , // read only when ADC_METER
   output logic               hl2link_rst_req    ,
   input                      hl2link_rst_ack    ,
   // Power
@@ -113,6 +114,7 @@ parameter     FAST_LNA = 0;
 parameter     AK4951 = 0;
 parameter     EXTENDED_RESP = 0;
 parameter     BYPASS_VERSA = 0;
+parameter     ADC_METER = 0;    // 1: response slot 3 carries adc_meter
 
 `include "cmd_bus.vh"
 
@@ -482,7 +484,10 @@ always @(posedge clk) begin
         2'b00: iresp <= {3'b000,resp_addr, ext_cwkey, 1'b0, ptt_resp, 6'b000111, ~ext_txinhibit, (&clip_cnt), 8'h00, dsiq_status, VERSION_MAJOR[7:0]};
         2'b01: iresp <= {3'b000,resp_addr, ext_cwkey, 1'b0, ptt_resp, 4'h0, temperature, 4'h0, fwd_pwr};
         2'b10: iresp <= {3'b000,resp_addr, ext_cwkey, 1'b0, ptt_resp, 4'h0, rev_pwr, 4'h0, bias_current};
-        2'b11: iresp <= {3'b000,resp_addr, ext_cwkey, 1'b0, ptt_resp, 16'h0, debug}; // Unused in HL
+        // Unused in stock HL. With ADC_METER: clipped samples, window number
+        // and peak |ADC| for the last 6.8 ms window (see adc_meter.v).
+        2'b11: iresp <= {3'b000,resp_addr, ext_cwkey, 1'b0, ptt_resp,
+                         (ADC_METER != 0) ? adc_meter : {16'h0, debug}};
       endcase
     end
   end else if (~(&clip_cnt)) begin

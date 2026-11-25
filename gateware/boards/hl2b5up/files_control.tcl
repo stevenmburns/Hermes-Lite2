@@ -10,6 +10,7 @@ set_global_assignment -name VERILOG_FILE ../../rtl/sync.v
 
 # Board control plane
 set_global_assignment -name VERILOG_FILE ../../rtl/control.v
+set_global_assignment -name VERILOG_FILE ../../rtl/adc_meter.v
 set_global_assignment -name VERILOG_FILE ../../rtl/led_flash.v
 set_global_assignment -name VERILOG_FILE ../../rtl/debounce.v
 set_global_assignment -name VERILOG_FILE ../../rtl/slow_adc.v

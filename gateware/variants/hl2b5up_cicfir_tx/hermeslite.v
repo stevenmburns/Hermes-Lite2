@@ -95,7 +95,7 @@ module hermeslite (
   hermeslite_core #(
     .BOARD        (5                                    ),
     .VERSION_MAJOR_OVR (75                              ),
-    .VERSION_MINOR_OVR (14                               ),
+    .VERSION_MINOR_OVR (15                               ),
     .IP           ({8'd0,8'd0,8'd0,8'd0}                ),
     .MAC          ({8'h00,8'h1c,8'hc0,8'ha2,8'h13,8'hdd}),
     .NR           (10                                   ),
@@ -110,7 +110,8 @@ module hermeslite (
     .HL2LINK      (0                                    ),
     .FAST_LNA     (1                                    ),
     .AK4951       (0                                    ),
-    .EXTENDED_RESP(1                                    )
+    .EXTENDED_RESP(1                                    ),
+    .ADC_METER    (1                                    )
   ) hermeslite_core_i (
     .pwr_clk3p3                (pwr_clk3p3           ),
     .pwr_clk1p2                (pwr_clk1p2           ),

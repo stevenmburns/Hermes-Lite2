@@ -1,0 +1,5 @@
+sim_build_*/
+*.log
+stim.mem
+results.xml
+__pycache__/

@@ -132,6 +132,7 @@ parameter       FAST_LNA = 0; // Support for fast LNA setting, TX/RX values
 
 parameter       AK4951 = 0;
 parameter       EXTENDED_RESP = 1;
+parameter       ADC_METER = 0; // ADC clip count and peak in response slot 3
 parameter       EXTENDED_DEBUG_RESP = 0;
 
 parameter       DSIQ_FIFO_DEPTH = 16384;
@@ -853,6 +854,30 @@ sync sync_atutxinhibit_ad9866 (
   .sig_out(atu_txinhibit_ad9866sync)
 );
 
+// ADC clip count and peak per 6.8 ms window, measured at the ADC clock and
+// carried into clk_ctrl for response slot 3.
+logic [31:0] adc_meter_ctrl;
+generate if (ADC_METER != 0) begin: ADCMETER
+  logic [31:0] adc_meter_ad9866;
+  logic        adc_meter_toggle;
+  adc_meter adc_meter_i (
+    .clk          (clk_ad9866),
+    .rx_data      (rx_data),
+    .meter        (adc_meter_ad9866),
+    .meter_toggle (adc_meter_toggle)
+  );
+  // The bus is stable for a whole window around each toggle.
+  sync_qualifier #(.WIDTH(32)) sync_adc_meter (
+    .clock           (clk_ctrl),
+    .data_in         (adc_meter_ad9866),
+    .data_valid      (adc_meter_toggle),
+    .data_valid_sync (),
+    .data_out        (adc_meter_ctrl)
+  );
+end else begin: NOADCMETER
+  assign adc_meter_ctrl = 32'h0;
+end endgenerate
+
 ad9866 #(.FAST_LNA(FAST_LNA)) ad9866_i (
   .clk(clk_ad9866),
   .clk_2x(clk_ad9866_2x),
@@ -1021,7 +1046,8 @@ control #(
   .FAST_LNA     (FAST_LNA     ),
   .AK4951       (AK4951       ),
   .EXTENDED_RESP(EXTENDED_RESP),
-  .BYPASS_VERSA (BYPASS_VERSA )
+  .BYPASS_VERSA (BYPASS_VERSA ),
+  .ADC_METER    (ADC_METER    )
 ) control_i (
   // Internal
   .clk                (clk_ctrl                   ),
@@ -1154,7 +1180,8 @@ control #(
   .hl2link_rst_req    (hl2link_rst_req            ),
   .hl2link_rst_ack    (hl2link_rst_ack            ),
   
-  .debug              (16'h0000                   )  //(debug                      )
+  .debug              (16'h0000                   ), //(debug                      )
+  .adc_meter          (adc_meter_ctrl             )
 );
 
 
