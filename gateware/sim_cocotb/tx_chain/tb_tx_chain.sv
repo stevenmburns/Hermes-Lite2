@@ -60,8 +60,13 @@ module tb_tx_chain;
 
   FirInterp8_1024 fi (clk, req2, fir_tready, tx_fir_i, tx_fir_q, y1_r, y1_i);
 
+`ifdef TX_CIC_MEM
+  CicInterpM5Mem #(.RRRR(RRRR), .IBITS(20), .OBITS(16), .GBITS(GBITS)) in2 (
+    clk, 1'd1, req2, y1_r, y1_i, y2_r, y2_i);
+`else
   CicInterpM5 #(.RRRR(RRRR), .IBITS(20), .OBITS(16), .GBITS(GBITS)) in2 (
     clk, 1'd1, req2, y1_r, y1_i, y2_r, y2_i);
+`endif
 
   logic signed [15:0] up_i, up_q;
 

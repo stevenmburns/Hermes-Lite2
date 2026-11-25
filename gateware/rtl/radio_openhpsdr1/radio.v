@@ -1062,7 +1062,12 @@ end
 FirInterp8_1024 fi (clk, req2, fir_tready, tx_fir_i, tx_fir_q, y1_r, y1_i);  // req2 enables an output sample, tx_tready requests next input sample.
 
 // GBITS reduced to 30
+`ifdef TX_CIC_MEM
+// Same output bit for bit, with the comb state in one M9K.
+CicInterpM5Mem #(.RRRR(RRRR), .IBITS(20), .OBITS(16), .GBITS(GBITS)) in2 ( clk, 1'd1, req2, y1_r, y1_i, y2_r, y2_i);
+`else
 CicInterpM5 #(.RRRR(RRRR), .IBITS(20), .OBITS(16), .GBITS(GBITS)) in2 ( clk, 1'd1, req2, y1_r, y1_i, y2_r, y2_i);
+`endif
 
 //---------------------------------------------------------
 //    CORDIC NCO

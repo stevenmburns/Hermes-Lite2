@@ -68,6 +68,36 @@ The NCO's spurs come from the 12 phase bits sincos drops, and the DAC word's
 spurs come from upstream (an FIR image 48 kHz from the carrier), so the two
 designs are equivalent at the DAC. `TX_FREQ_HZ=28.4e6 make` runs another band.
 
+## Block-RAM comb
+
+`hl2b5up_cicfir_tx` builds with `TX_CIC_MEM`, which replaces
+`CicInterpM5` with `rtl/radio_openhpsdr1/CicInterpM5Mem.v`. The integrators stay in
+registers. The comb state moves into one M9K, and a single subtractor computes the
+ten comb values serially, in 23 of the 200 clocks between input samples. Each comb
+value is stored at IBITS + 5 = 25 bits, which is exact because each stage grows the
+input by at most one bit.
+
+Both versions pass every test here with the same model. Of 12 mutations in the new
+module, 9 were caught. Two survivors are equivalent: one writes to the wrong bank,
+which negates comb stages 1 to 4, and the negations cancel; the other reloads an
+operand register that is not read on that step. The third reads Q directly instead
+of the captured copy, which only differs if the input changes on the clock after a
+sample; radio.v holds it for about 135 clocks.
+
+Quartus 25.1std, seed 1, after place and route:
+
+| Measurement | CicInterpM5 | 51-bit RAM | 25-bit RAM |
+| --- | --- | --- | --- |
+| TX CIC logic elements | 1,032 | 874 | 750 |
+| Total logic elements | 19,280 | 19,121 | 19,075 |
+| M9K blocks | 57 | 58 | 58 |
+| Worst setup slack | +0.043 ns | +0.043 ns | +0.043 ns |
+
+Quartus already trims the original combs to their real width, so they were only
+about 470 registers. Saving 205 LEs (under 1% of the device) costs one of the 9
+remaining M9Ks and does not change the worst path, so `hl2b5up_main` does not use
+it. `hl2b5up_cicfir_tx` does: there logic is the scarce resource and M9Ks are not.
+
 ## Notes on the FIR
 
 * The passband is about +/-15 kHz. A tone at -18.9 kHz comes out 1.6 dB low.
@@ -85,8 +115,9 @@ Activate an environment with cocotb and numpy, then:
 
 ```sh
 cd gateware/sim_cocotb/tx_chain
-make                # NCO upconverter, as built for hl2b5up_main
-make TX_NCO=        # CORDIC upconverter, cpl_cordic
+make                          # block-RAM comb and NCO upconverter (hl2b5up_cicfir_tx)
+make TX_CIC_MEM=              # register comb and NCO upconverter, as built for hl2b5up_main
+make TX_CIC_MEM= TX_NCO=      # register comb and CORDIC upconverter (stock)
 ```
 
 A run takes about 40 seconds from clean. Quartus is not required.

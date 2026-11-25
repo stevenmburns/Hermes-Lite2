@@ -6,4 +6,4 @@ stim.mem
 cic_out.bin
 fir_out.bin
 up_out.bin
-sim_build_nco/
+sim_build*/

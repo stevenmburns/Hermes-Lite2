@@ -26,6 +26,7 @@ set_global_assignment -name VERILOG_FILE ../../rtl/nco/tx_nco_upconv.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/FirInterp8_1024.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/firram36I_1024.v
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/CicInterpM5.v
+set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/CicInterpM5Mem.v
 
 # Transmit EER / envelope option (LRDATA=2)
 set_global_assignment -name VERILOG_FILE ../../rtl/radio_openhpsdr1/FirInterp5_1025_EER.v
