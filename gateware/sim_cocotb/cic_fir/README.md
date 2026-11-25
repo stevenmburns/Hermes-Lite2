@@ -57,7 +57,7 @@ doubles the clean band: the CIC's images at 384 kHz +- 80 kHz are still
 
 ## Bench
 
-`make` (Verilator, NS=24) runs three tests. Each compares every output of all
+`make` (Verilator, NS=24) runs four tests. Each compares every output of all
 24 streams with the model, after finding the two decimation phases (exactly one
 alignment must match), and checks the strobe spacing and how long out_data
 holds.
@@ -66,12 +66,14 @@ holds.
 | --- | --- |
 | `test_full_scale_random` | 18-bit random, from power-up: must match from the first output |
 | `test_quiet_random` | +-2^9 random |
+| `test_saturation` | A full-scale +-1 pattern matched to the chain's impulse response (its absolute gain is 1.7 x the DC gain), and its inverse: must clip at both limits. Random inputs reach only about 2.6M of the 8.4M limit, and no sine or square wave saturates |
 | `test_tones` | A complex tone per stream pair. Measured from the RTL output: passband gain at 9.4 to 75 kHz against `design.py` (within 0.02 dB), and the level of FIR and CIC images |
 
 Results (Verilator 5, cocotb 2):
 
     full-scale random: 397 outputs x 24 streams, 0 mismatches, out_data held 181 clocks
     quiet random:      356 outputs x 24 streams, 0 mismatches
+    saturation:        356 outputs x 24 streams, 0 mismatches; 130 at +2^23-1, 131 at -2^23
     tones:            1061 outputs x 24 streams, 0 mismatches
       pass   9.4 .. 75 kHz: +0.004 .. -0.336 dB, each within 0.001 dB of design
       FIR images (117, 152, 222, 324 kHz): -94.1 to -102.1 dBc

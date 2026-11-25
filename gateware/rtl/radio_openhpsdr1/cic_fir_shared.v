@@ -228,9 +228,11 @@ module cic_fir_unit #(
   reg [1:0]         res_j = 2'd0;
   reg               res_v = 1'b0;
 
-  wire signed [43-SHIFT:0] y = res >>> SHIFT;
-  localparam signed [43-SHIFT:0] YMAX = 8388607;
-  localparam signed [43-SHIFT:0] YMIN = -8388608;
+  // res >> SHIFT keeps 44 - SHIFT bits; the limits are the 24-bit extremes at that width.
+  wire signed [43:0]       ysh = res >>> SHIFT;
+  wire signed [43-SHIFT:0] y   = ysh[43-SHIFT:0];
+  localparam signed [43-SHIFT:0] YMAX = $signed({{(20 - SHIFT){1'b0}}, 24'h7fffff});
+  localparam signed [43-SHIFT:0] YMIN = $signed({{(20 - SHIFT){1'b1}}, 24'h800000});
   wire [23:0] ysat = (y > YMAX) ? 24'h7fffff : (y < YMIN) ? 24'h800000 : y[23:0];
 
   always @(posedge clock) begin

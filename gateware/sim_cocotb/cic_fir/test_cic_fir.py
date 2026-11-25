@@ -138,6 +138,37 @@ async def test_quiet_random(dut):
     await run(dut, X, "quiet random")
 
 
+def worst_case_pattern():
+    """A full-scale +-1 input matched to the chain's impulse response (CIC R=5 at
+    4.8 MHz, then the FIR): sum|g| is 1.7 x the DC gain, so it drives the output
+    past +2^23 - 1 (its inverse past -2^23), unlike any sine or square wave."""
+    h, _ = model.load_coefs()
+    c = np.ones(5)
+    for _ in range(3):
+        c = np.convolve(c, np.ones(5))
+    up = np.zeros(len(h) * 5 - 4)
+    up[::5] = h
+    g = np.convolve(c, up)
+    return np.where(g[::-1] >= 0, (1 << 17) - 1, -(1 << 17))
+
+
+@cocotb.test()
+async def test_saturation(dut):
+    """Worst-case inputs: the output must clip at both limits exactly as the model does.
+    The 557-frame pattern is not a multiple of 5 long, so it meets every decimation phase."""
+    nfr = 25 * 400
+    pat = worst_case_pattern()
+    X = np.zeros((NS, nfr), dtype=np.int64)
+    for s in range(NS):
+        x = np.roll(np.tile(pat, nfr // len(pat) + 2), 37 * s)[:nfr]
+        X[s] = x if s % 2 == 0 else -x - 1
+    got = await run(dut, X, "saturation")
+    hi = int(np.count_nonzero(got == (1 << 23) - 1))
+    lo = int(np.count_nonzero(got == -(1 << 23)))
+    dut._log.info("saturation: %d outputs at +2^23-1, %d at -2^23", hi, lo)
+    assert hi > 0 and lo > 0, "the output never reached both limits: saturation not exercised"
+
+
 # Tones on 187.5 Hz bins (192 kHz / 1024), so a 1024-point FFT needs no window.
 PASS_KHZ = [9.375, 30.0, 49.875, 60.0, 69.9375, 75.0]
 # The first four are FIR images; the last two are the second CIC's images next to
