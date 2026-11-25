@@ -16,9 +16,16 @@ NR ?= 12
 #   cicfir     CIC_SHARED and CIC_FIR: cic_fir_shared (second CIC to 960 kHz,
 #              then a /5 FIR) for all receivers (hl2b5up_cicfir).
 CHAIN ?= full
-export NR CHAIN XBUILD COCOTB_TEST_FILTER
+# TX=1 builds radio.v as hl2b5up_cicfir_tx does: one transmitter (NCO
+# upconverter, block-RAM TX CIC combs) and no FPGA VNA scanner. The
+# transmitter stays idle; the receivers must not change.
+TX ?=
+export NR CHAIN XBUILD COCOTB_TEST_FILTER TX
 
-SIM_BUILD ?= sim_build_$(CHAIN)_nr$(NR)
+ifneq ($(TX),)
+TXTAG = _tx$(filter cordic,$(TX))
+endif
+SIM_BUILD ?= sim_build_$(CHAIN)_nr$(NR)$(TXTAG)
 
 COMPILE_ARGS += +define+USE_ALTSYNCRAM=1
 COMPILE_ARGS += -GNR=$(NR)
@@ -60,6 +67,22 @@ else
 $(error CHAIN must be full, cic, cicshared or cicfir)
 endif
 
+ifneq ($(TX),)
+COMPILE_ARGS += -GNT=1 -GVNA=0 +define+TX_CIC_MEM=1
+# TX=cordic builds the stock cpl_cordic upconverter instead, for comparison.
+ifeq ($(TX),cordic)
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/cpl_cordic.v
+else
+COMPILE_ARGS += +define+TX_NCO=1
+endif
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/FirInterp8_1024.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firram36I_1024.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/firrom/firromI_1024.v
+VERILOG_SOURCES += $(TOPDIR)/radio_openhpsdr1/CicInterpM5Mem.v
+VERILOG_SOURCES += $(TOPDIR)/nco/tx_nco_upconv.v
+MIF_FILES_TX = $(TOPDIR)/radio_openhpsdr1/firrom/coefI8_1024.mif
+endif
+
 TOPLEVEL = tb_many_rx
 
 COMPILE_ARGS += --timing -Wno-fatal -Wno-PROCASSWIRE -Wno-WIDTHEXPAND \
@@ -75,7 +98,8 @@ MIF_FILES = $(TOPDIR)/nco/sincos_coarse.mif \
             $(TOPDIR)/radio_openhpsdr1/firrom/coefL4AE.mif \
             $(TOPDIR)/radio_openhpsdr1/firrom/coefL4BF.mif \
             $(TOPDIR)/radio_openhpsdr1/firrom/coefL4CG.mif \
-            $(TOPDIR)/radio_openhpsdr1/firrom/coefL4DH.mif
+            $(TOPDIR)/radio_openhpsdr1/firrom/coefL4DH.mif \
+            $(MIF_FILES_TX)
 
 CUSTOM_SIM_DEPS += rom_images.stamp
 
@@ -103,4 +127,4 @@ compare-builds:
 	$(PYTHON) compare_builds.py cic_nr10 cicshared_nr12
 
 clean::
-	rm -f rom_images.stamp stim.mem rx_stream.bin *.mif sin_fine.txt frames_*.npy xbuild_*.npy
+	rm -f rom_images.stamp stim.mem rx_stream.bin tx_stim.mem tx_dac.bin *.mif sin_fine.txt frames_*.npy xbuild_*.npy

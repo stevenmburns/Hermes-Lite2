@@ -27,6 +27,9 @@ make compare-builds      # 10-receiver hl2b5up_cicrx vs the 12-receiver builds,
                          # channel by channel (see "Cross-build comparison")
 make NR=4                # 4 receivers: radio.v uses CALCTYPE 3 at NR <= 5, 0 above
 make RADIO_V=/path/to/radio.v   # test another copy of radio.v
+make CHAIN=cicfir NR=10 TX=1    # as hl2b5up_cicfir_tx: NT=1 (tx_nco_upconv, block-RAM
+                                # TX CIC combs), VNA=0; adds test_transmit_through_radio
+make CHAIN=cicfir NR=10 TX=cordic   # the same with the stock cpl_cordic upconverter
 ```
 
 A run of the four tests takes about 1 to 2.5 minutes.
@@ -39,6 +42,7 @@ A run of the four tests takes about 1 to 2.5 minutes.
 | `test_stream_format_and_mapping` | One tone per channel. Each tone appears in its own channel only, at the right frequency. The stream carries 2 x NR words per output with `tlast` on the last, one output every 400 clocks |
 | `test_frequency_response` | One ADC tone, with channel c tuned so the tone sits at offset c. This measures NR points of the response in one run, including offsets that alias. `CHAIN=cic` must match the analytic CIC response within 0.2 dB, and `CHAIN=cicfir` the analytic CIC and FIR response (from `../cic_fir/coefs.txt`), with aliases at least 80 dB down from 125 kHz. `CHAIN=full` must be flat within 0.5 dB to 20 kHz, with aliases at least 80 dB down from 125 kHz |
 | `test_spurs` | One tone in every channel. The worst spur within ±0.4 x the sample rate must be below -95 dBc |
+| `test_transmit_through_radio` | Only with `TX`. Keys PTT (`ds_cmd_ptt`, `tx_tuser[3]`) with the TX buffer latency and PTT hang set to 0, and feeds a 1.5 kHz complex tone (I = cos, Q = sin), one sample per `tx_tready`, with the transmitter at 7.1 MHz. The DAC must be silent before PTT and after release, take samples at 48 kHz, and carry the tone at the level the FIR, CIC and upconverter gains predict (within 0.5 dB), with the other sideband below -100 dBc and every other spur below -85 dBc |
 | `test_cross_build_capture` | Only with `XBUILD=1`, alone (`make compare-builds`). Two captures with channels 0-9 tuned the same whatever NR is, and channels 10 and 11 copying 8 and 9, which must match them bit for bit. Saves channels 0-9 for `compare_builds.py` |
 
 The slot test must be the first capture after power-up. `radio.v` never
@@ -120,6 +124,24 @@ the command sequence to 12 commands, so reset ends on the same clock for any
 NR.
 
 These are simulation results. Nothing here has been measured on a radio.
+
+## Transmit (hl2b5up_cicfir_tx)
+
+`tx_chain` tests the TX modules on their own; this runs them inside
+`radio.v`, through the PTT state machine, the TX frequency register and the
+DAC word. With `CHAIN=cicfir NR=10 TX=1` all five tests pass: the receivers
+are unchanged with the transmitter and without the VNA scanner. The transmit
+test, with each upconverter (Kaiser window, beta 20, 146 Hz bins):
+
+| Measurement | `TX=cordic` (cpl_cordic) | `TX=1` (tx_nco_upconv) |
+| --- | --- | --- |
+| Tone level against the predicted 998.7 codes | -0.017 dB | -0.017 dB |
+| Other sideband | -123.7 dBc | -121.3 dBc |
+| Worst spur, DC to 38.4 MHz | -94.7 dBc | -95.0 dBc |
+
+A tone with I = cos and Q = sin comes out 1.5 kHz *below* the carrier with
+both upconverters. That is the stock HL2 convention, which client software
+already follows, so the test expects it.
 
 ## Files
 

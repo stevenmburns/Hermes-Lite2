@@ -7,6 +7,11 @@
 // Which receiver_nco is compiled (full chain or CIC only) is chosen in the
 // Makefile, as the variant .qsf files do.
 //
+// With NT = 1, raising `tx_run` keys PTT (ds_cmd_ptt and tx_tuser[3]) and
+// offers tx_stim.mem, {I, Q} 16 bits each, one sample per tx_tready, in a
+// loop; while `tx_capture` is high every tx_data_dac word is written to
+// tx_dac.bin as a 32-bit word.
+//
 // Python sets frequencies, rate and receiver count over the command bus, then
 // raises `capture`. The ADC replays stim.mem in a loop. Every upstream word
 // (rx_tvalid) is written to rx_stream.bin as two 32-bit words: the 24-bit
@@ -15,18 +20,24 @@
 `timescale 1ps/1ps
 
 module tb_many_rx #(
-  parameter NR = 12
+  parameter NR  = 12,
+  parameter NT  = 0,   // 1 builds the transmitter too (idle here)
+  parameter VNA = 1
 ) (
   input  logic        rst,
   input  logic        load_stim,
   input  logic        capture,
+  input  logic        tx_run,
+  input  logic        tx_capture,
   input  logic [ 5:0] cmd_addr,
   input  logic [31:0] cmd_data,
   input  logic        cmd_rqst,
   output logic        clk,
   output logic        clk_2x,
   output logic [31:0] clk_count,
-  output logic [31:0] words
+  output logic [31:0] words,
+  output logic [31:0] tx_samples,
+  output logic [31:0] dac_words
 );
 
   localparam STIM_LEN = 65536;
@@ -62,13 +73,29 @@ module tb_many_rx #(
     end
   end
 
+  // Transmit stimulus
+  localparam TX_STIM_LEN = 4096;
+  logic [31:0] tx_stim [0:TX_STIM_LEN-1];
+  logic [11:0] tx_index = 12'd0;
+  logic        tx_tready;
+  logic [11:0] tx_data_dac;
+  always @(posedge load_stim) if (NT != 0) $readmemh("tx_stim.mem", tx_stim);
+  initial tx_samples = 32'd0;
+  always @(posedge clk) begin
+    if (tx_run && tx_tready) begin
+      tx_index   <= tx_index + 12'd1;
+      tx_samples <= tx_samples + 32'd1;
+    end
+  end
+
   logic [23:0] rx_tdata;
   logic        rx_tlast, rx_tvalid;
   logic [ 1:0] rx_tuser;
 
   radio #(
     .NR      (NR),
-    .NT      (0),
+    .NT      (NT),
+    .VNA     (VNA),
     .LRDATA  (0),
     .CLK_FREQ(76800000),
     .HL2LINK (0)
@@ -83,7 +110,7 @@ module tb_many_rx #(
     .lm_valid               (1'b0),
     .ls_valid               (),
     .ls_done                (1'b0),
-    .ds_cmd_ptt             (1'b0),
+    .ds_cmd_ptt             (tx_run),
     .run                    (1'b1),
     .qmsec_pulse            (1'b0),
     .ext_keydown            (1'b0),
@@ -91,13 +118,13 @@ module tb_many_rx #(
     .tx_on                  (),
     .cw_on                  (),
     .cw_profile             (),
-    .tx_tdata               (32'h0),
+    .tx_tdata               (tx_stim[tx_index]),
     .tx_tlast               (1'b1),
-    .tx_tready              (),
-    .tx_tvalid              (1'b0),
-    .tx_tuser               (4'h0),
+    .tx_tready              (tx_tready),
+    .tx_tvalid              (tx_run),
+    .tx_tuser               ({tx_run, 3'b000}),
     .tx_twait               (),
-    .tx_data_dac            (),
+    .tx_data_dac            (tx_data_dac),
     .clk_envelope           (1'b0),
     .tx_envelope_pwm_out    (),
     .tx_envelope_pwm_out_inv(),
@@ -137,6 +164,23 @@ module tb_many_rx #(
       $fwrite(fd, "%u", {8'h00, rx_tdata});
       $fwrite(fd, "%u", {clk_count[29:0], rx_tlast, 1'b1});
       words <= words + 32'd1;
+    end
+  end
+
+  integer tfd = 0;
+  initial dac_words = 32'd0;
+  always @(posedge tx_capture) begin
+    tfd = $fopen("tx_dac.bin", "wb");
+    dac_words = 32'd0;
+  end
+  always @(negedge tx_capture) begin
+    if (tfd != 0) $fclose(tfd);
+    tfd = 0;
+  end
+  always @(posedge clk) begin
+    if (tx_capture && tfd != 0) begin
+      $fwrite(tfd, "%u", {20'h0, tx_data_dac});
+      dac_words <= dac_words + 32'd1;
     end
   end
 

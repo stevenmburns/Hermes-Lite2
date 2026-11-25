@@ -22,6 +22,7 @@ from cocotb.triggers import ClockCycles, Timer
 
 NR = int(os.environ.get("NR", "12"))
 CHAIN = os.environ.get("CHAIN", "full")
+TX = bool(os.environ.get("TX"))
 
 FS = 76_800_000
 OUT_RATE = 192_000                 # rx_rate 2 for "full"; fixed for "cic"
@@ -96,6 +97,8 @@ async def run_capture(dut, tunings, outputs, compare=True, pad_to=None):
     """
     dut.rst.value = 1
     dut.capture.value = 0
+    dut.tx_run.value = 0
+    dut.tx_capture.value = 0
     dut.cmd_rqst.value = 0
     dut.cmd_addr.value = 0
     dut.cmd_data.value = 0
@@ -481,3 +484,130 @@ async def test_every_capture_matched_cic(dut):
     dut._log.info("compared captures: %s", COMPARED)
     assert len(COMPARED) == CAPTURES and CAPTURES == 4, \
         "missing CHAIN=cic reference; run `make compare-shared`"
+
+
+# ------------------------------------------------------------------ transmit
+
+CMDA_TXFREQ = 0x01
+CMDA_LATENCY = 0x17
+TX_FREQ = 7_100_000
+TX_STIM_LEN = 4096                 # tb loops this many 48 kHz samples
+TX_AUDIO_BIN = 128                 # 128 * 48000 / 4096 = 1500 Hz, loops seamlessly
+TX_AUDIO = TX_AUDIO_BIN * 48_000 / TX_STIM_LEN
+TX_AMPLITUDE = 16000
+TX_SETTLE = 400_000                # clocks after PTT: FIR, CIC and the FIFO-less start
+TX_WINDOW = 2 ** 19                # DAC words analysed (146 Hz bins)
+RRRR = 200                         # radio.v TX CIC rate at 76.8 MHz
+GBITS = 31
+UPCONV_GAIN = 0.41169              # CORDIC gain / 4, which tx_nco_upconv matches
+
+
+def tx_expected_amplitude():
+    """DAC amplitude for a complex tone of TX_AMPLITUDE, as tx_chain computes it:
+    FIR phase sum / 2^13, CIC RRRR^4 / 2^(20 + GBITS - 16), upconverter, then >>> 2."""
+    rtl = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "rtl")
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rx_chain"))
+    import mif2mem
+    _, words = mif2mem.parse_mif(os.path.join(rtl, "radio_openhpsdr1", "firrom", "coefI8_1024.mif"))
+    coef = np.array([w - (1 << 18) if w & (1 << 17) else w for w in words], dtype=float)
+    fir_gain = np.mean([coef[p::8].sum() for p in range(8)]) / 2 ** 13
+    cic_gain = RRRR ** 4 / 2 ** (20 + GBITS - 16)
+    return TX_AMPLITUDE * fir_gain * cic_gain * UPCONV_GAIN / 4
+
+
+def write_tx_stim():
+    n = np.arange(TX_STIM_LEN)
+    ph = 2 * np.pi * TX_AUDIO_BIN * n / TX_STIM_LEN
+    i = np.round(TX_AMPLITUDE * np.cos(ph)).astype(np.int64)
+    q = np.round(TX_AMPLITUDE * np.sin(ph)).astype(np.int64)
+    with open("tx_stim.mem", "w") as fd:
+        for a, b in zip(i, q):
+            fd.write(f"{a & 0xFFFF:04x}{b & 0xFFFF:04x}\n")
+
+
+async def capture_dac(dut, clocks):
+    dut.tx_capture.value = 1
+    await ClockCycles(dut.clk, 2)
+    while int(dut.dac_words.value) < clocks:
+        await ClockCycles(dut.clk, 4096)
+    dut.tx_capture.value = 0
+    await ClockCycles(dut.clk, 2)
+    w = np.fromfile("tx_dac.bin", dtype="<u4").astype(np.int64) & 0xFFF
+    w = np.where(w >= 2048, w - 4096, w)
+    assert len(w) >= clocks, f"captured {len(w)} DAC words, wanted {clocks}"
+    return w[:clocks].astype(float)
+
+
+@cocotb.test(skip=not TX or XBUILD)
+async def test_transmit_through_radio(dut):
+    """PTT and a 1.5 kHz complex tone (I = cos, Q = sin) through radio.v's TX
+    path: the DAC is silent before PTT, then carries one tone at the level the
+    chain gain predicts, with the other sideband below -100 dBc and every spur
+    below -85 dBc.
+
+    radio.v puts this tone 1.5 kHz BELOW the carrier, with cpl_cordic (TX=cordic)
+    as with tx_nco_upconv: that is the stock HL2 convention, which client
+    software already matches, so the test expects it."""
+    write_stim([])                 # ADC quiet; the receivers run regardless
+    write_tx_stim()
+    dut.rst.value = 1
+    dut.capture.value = 0
+    dut.tx_run.value = 0
+    dut.tx_capture.value = 0
+    dut.cmd_rqst.value = 0
+    dut.load_stim.value = 0
+    await Timer(1, unit="ns")
+    dut.load_stim.value = 1
+    await ClockCycles(dut.clk, 20)
+    await command(dut, CMDA_GENERAL, (RX_RATE_192K << 24) | ((NR - 1) << 3))
+    await command(dut, CMDA_TXFREQ, TX_FREQ)
+    await command(dut, CMDA_LATENCY, 0)    # no TX buffer wait, no PTT hang
+    dut.rst.value = 0
+    await ClockCycles(dut.clk, 2000)
+
+    idle = await capture_dac(dut, 8192)
+    dut._log.info("before PTT: DAC words %d..%d", int(idle.min()), int(idle.max()))
+    assert np.all(idle == 0), "DAC is not silent before PTT"
+
+    dut.tx_run.value = 1
+    await ClockCycles(dut.clk, TX_SETTLE)
+    s0 = int(dut.tx_samples.value)
+    dac = await capture_dac(dut, TX_WINDOW)
+    rate = (int(dut.tx_samples.value) - s0) / ((TX_WINDOW + 8) / FS)
+    dut._log.info("TX samples taken at %.0f Hz", rate)
+    assert abs(rate - 48_000) < 500, f"radio.v took TX samples at {rate:.0f} Hz, not 48 kHz"
+
+    win = np.kaiser(TX_WINDOW, 20)        # sidelobes below -140 dB; main lobe about +-7 bins
+    spec = np.abs(np.fft.rfft(dac * win)) / (win.sum() / 2)
+    binhz = FS / TX_WINDOW
+    f_up = nco_freq(TX_FREQ) - TX_AUDIO    # the wanted tone (see docstring)
+    f_lo = nco_freq(TX_FREQ) + TX_AUDIO    # the other sideband
+
+    def level(f):
+        k = int(round(f / binhz))
+        return spec[k - 3:k + 4].max(), k
+
+    up, kup = level(f_up)
+    lo, klo = level(f_lo)
+    want = tx_expected_amplitude()
+    mask = np.ones(len(spec), bool)
+    mask[:8] = False                           # DC: the >>> 2 truncation offset
+    mask[kup - 16:kup + 17] = False         # the tone's main lobe (+-2.3 kHz)
+    kspur = int(np.argmax(np.where(mask, spec, 0)))
+    dut._log.info("tone at %.0f Hz: %.1f DAC codes (predicted %.1f, %+.3f dB), peak word %d",
+                  f_up, up, want, 20 * np.log10(up / want), int(np.abs(dac).max()))
+    dut._log.info("other sideband %.0f Hz: %.1f dBc; worst spur %.1f dBc at %.0f Hz",
+                  f_lo, 20 * np.log10(lo / up), 20 * np.log10(spec[kspur] / up), kspur * binhz)
+    assert abs(20 * np.log10(up / want)) < 0.5, "tone level differs from the chain gain"
+    assert np.abs(dac).max() < 2047, "DAC word at full scale"
+    # Limits 20 and 10 dB above the values measured with either upconverter
+    # (sideband -121 to -124 dBc, worst spur -95 dBc).
+    assert 20 * np.log10(lo / up) < -100, "other sideband not suppressed"
+    assert 20 * np.log10(spec[kspur] / up) < -85, "spur above -85 dBc"
+
+    dut.tx_run.value = 0
+    await ClockCycles(dut.clk, 400_000)
+    after = await capture_dac(dut, 8192)
+    dut._log.info("after PTT release: DAC words %d..%d", int(after.min()), int(after.max()))
+    assert np.all(after == 0), "DAC is not silent after PTT release"
