@@ -42,6 +42,8 @@ make all-duts      # all six designs, results_<dut>.log each, PASS/FAIL per line
 make DUT=cl        # one design
 make DUT=hold HOLD_D=2 HOLD_CONFIRM=0   # hold with other parameters
 make hold-sweep    # hold for D = 2..6, with and without CONFIRM
+make traces        # scenario traces for six designs, traces_<dut>.json
+python plot_traces.py   # timing diagrams from them: debounce_traces.png
 ```
 
 `msec_pulse` is driven every 8 clocks instead of every 1 ms, because the
@@ -63,9 +65,10 @@ Each design has a pulse-level Python model.
 | `test_spikes_rejected` | the same keying plus isolated 1 ms spikes, two edges each |
 | `test_width_not_shortened` | the 150 elements without spikes: every press has the same delay, and no element comes out shorter than keyed |
 | `test_keying_metrics`, `test_single_sample_glitch` | log the numbers below |
+| `test_dump_scenarios` | six hand-made key sequences through the RTL, checked against the model, written to `traces_<dut>.json` |
 
 The property tests are marked `expect_fail` for a design that lacks the
-property, so every design reports all 10 tests passing. A design that gains or
+property, so every design reports all 11 tests passing. A design that gains or
 loses a property shows up as a failure.
 
 The keying stimulus uses key-down and key-up times of 12 to 60 ms; a dit at
@@ -147,6 +150,7 @@ These are simulation results. Nothing here has been measured on a radio.
 | --- | --- |
 | `Makefile` | Verilator build; `DUT=` selects the design, `all-duts` runs all six, `hold-sweep` runs `hold` over D |
 | `test_debounce.py` | Models, stimulus and the cocotb tests |
+| `plot_traces.py`, `debounce_traces.png` | Timing diagrams of six designs on the scenario traces |
 | `candidates/debounce_cl.v` | Confirm-then-lockout candidate, `CONFIRM` and `LOCKOUT` parameters |
 | `candidates/debounce_run.v` | Run-length comparison design |
 | `candidates/debounce_integ.v` | Integrator comparison design |
