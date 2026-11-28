@@ -9,6 +9,8 @@ selects which one is simulated (see the Makefile):
   cl          candidates/debounce_cl.v: confirm 2 samples, then lock out 6
   run         candidates/debounce_run.v: switch after 4 agreeing samples
   integ       candidates/debounce_integ.v: saturating counter, 0..4
+  hold        candidates/debounce_hold.v: both edges D+1 samples late, so the
+              element keeps its width (HOLD_D, HOLD_CONFIRM)
 
 Each design has a pulse-level Python model. test_matches_model_* check the RTL
 against it on every pulse. The property tests then check behaviour; a design
@@ -104,12 +106,34 @@ class Integrator:
         return self.clean
 
 
+class EqualDelay:
+    """candidates/debounce_hold.v: both edges D+1 samples late."""
+
+    def __init__(self, d=4, confirm=1):
+        self.d, self.confirm = d, confirm
+        self.history, self.clean = 0, 0
+
+    def pulse(self, pb):
+        oldest = (self.history >> self.d) & 1
+        newer = self.history & ((1 << self.d) - 1)
+        if oldest and (not self.confirm or newer):
+            self.clean = 1
+        elif self.history == 0:
+            self.clean = 0
+        self.history = ((self.history << 1) | pb) & ((1 << (self.d + 1)) - 1)
+        return self.clean
+
+
+HOLD_D = int(os.environ.get("HOLD_D", "4"))
+HOLD_CONFIRM = int(os.environ.get("HOLD_CONFIRM", "1"))
+
 MODELS = {
     "committed": lambda: ShiftHistory(fixed=False),
     "fixed": lambda: ShiftHistory(fixed=True),
     "cl": ConfirmLockout,
     "run": RunLength,
     "integ": Integrator,
+    "hold": lambda: EqualDelay(HOLD_D, HOLD_CONFIRM),
 }
 
 
@@ -227,12 +251,19 @@ def keying_metrics(out, marks):
 
 # Which properties each design has; property tests are expect_fail otherwise.
 EXPECT = {
-    #             bounce  immediate  realistic  spikes
-    "committed": (False,  False,     False,     False),
-    "fixed":     (True,   True,      True,      False),
-    "cl":        (True,   False,     True,      True),
-    "run":       (True,   False,     True,      True),
-    "integ":     (True,   False,     True,      True),
+    #             bounce  immediate  realistic  spikes  width
+    "committed": (False,  False,     False,     False,  False),
+    "fixed":     (True,   True,      True,      False,  True),
+    "cl":        (True,   False,     True,      True,   False),
+    "run":       (True,   False,     True,      True,   False),
+    "integ":     (True,   False,     True,      True,   False),
+    # hold: the bench's bounce has gaps of up to 5 samples, so it needs D >= 4
+    # (D >= 3 with CONFIRM) to give no extra edges, and D >= 5 with CONFIRM to
+    # keep every press delay at D+1. Isolated spikes 3 samples apart can both
+    # sit in the window, so CONFIRM does not reject all of them.
+    "hold":      (HOLD_D >= 2, False,
+                  HOLD_D >= (3 if HOLD_CONFIRM else 4), False,
+                  HOLD_D >= (5 if HOLD_CONFIRM else 4)),
 }
 
 
@@ -316,6 +347,21 @@ async def test_spikes_rejected(dut):
     m = keying_metrics(await drive(dut, samples), marks)
     dut._log.info("extra edges with spikes: %d", m["extra_edges"])
     assert m["extra_edges"] == 0
+
+
+@cocotb.test(expect_fail=expect_fail(4))
+async def test_width_not_shortened(dut):
+    """150 bouncy elements: every press has the same delay and no element is
+    shorter than keyed, so only the release bounce changes the width."""
+    await setup(dut)
+    samples, marks = keying(seed=1)
+    m = keying_metrics(await drive(dut, samples), marks)
+    assert m["extra_edges"] == 0
+    dut._log.info("press delay %d..%d ms, width error %+d..%+d ms",
+                  min(m["press"]), max(m["press"]), min(m["width"]),
+                  max(m["width"]))
+    assert min(m["press"]) == max(m["press"])
+    assert min(m["width"]) >= 0
 
 
 @cocotb.test()
