@@ -386,6 +386,52 @@ async def test_keying_metrics(dut):
             min(m["width"]), max(m["width"]))
 
 
+# ---------------------------------------------------------------- scenarios
+
+def _key(pre, body, post):
+    return [0] * pre + body + [0] * post
+
+
+def _dits(n=3, on=30, off=30, bounce=((1, 0, 1), (0, 1, 0, 0, 1))):
+    out, keyed, t = [0] * 6, [], 6
+    for _ in range(n):
+        press, release = list(bounce[0]), list(bounce[1])
+        out += press + [1] * (on - len(press)) + release + [0] * (off - len(release))
+        keyed.append((t, t + on))
+        t += on + off
+    return out + [0] * 10, keyed
+
+
+SCENARIOS = {
+    # name: (pb samples, keyed intervals [start, end) in samples)
+    "clean": (_key(5, [1] * 20, 17), [(5, 25)]),
+    "press_bounce": (_key(5, [1, 0, 1, 1, 0, 0, 1] + [1] * 13, 17), [(5, 25)]),
+    "release_bounce": (_key(5, [1] * 20 + [0, 1, 0, 0, 1], 12), [(5, 25)]),
+    "spike": ([0] * 10 + [1] + [0] * 31, []),
+    "dropout": (_key(5, [1] * 10 + [0] + [1] * 10, 16), [(5, 26)]),
+    "dits_40wpm": _dits(),
+}
+TRACE_LABEL = (f"hold_d{HOLD_D}_c{HOLD_CONFIRM}" if DUT == "hold" else DUT)
+
+
+@cocotb.test()
+async def test_dump_scenarios(dut):
+    """Drive each hand-made scenario through the RTL and write traces_<dut>.json
+    (clean_pb after every pulse) for plot_traces.py. Checks the RTL against the
+    model on each one; 14 idle samples between scenarios clear every design."""
+    import json
+    await setup(dut)
+    out = {"dut": TRACE_LABEL, "scenarios": {}}
+    for name, (samples, keyed) in SCENARIOS.items():
+        await drive(dut, [0] * 14)
+        got = await drive(dut, samples)
+        assert got == run_model(samples), name
+        out["scenarios"][name] = {"pb": samples, "clean": got, "keyed": keyed}
+    with open(f"traces_{TRACE_LABEL}.json", "w") as f:
+        json.dump(out, f)
+    dut._log.info("wrote traces_%s.json", TRACE_LABEL)
+
+
 @cocotb.test()
 async def test_single_sample_glitch(dut):
     """A 1 ms spike from idle: log the clean_pb pulse it produces."""

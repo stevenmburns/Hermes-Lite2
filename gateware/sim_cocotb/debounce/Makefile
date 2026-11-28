@@ -59,7 +59,20 @@ $(FIXED_SRC): $(TOPDIR)/debounce.v Makefile
 $(SIM_BUILD)/Vtop.mk: $(FIXED_SRC)
 endif
 
-.PHONY: all-duts hold-sweep
+.PHONY: all-duts hold-sweep traces
+
+# Scenario traces for plot_traces.py: one traces_<dut>.json per design.
+traces:
+	@for d in committed fixed cl integ; do \
+	  COCOTB_TEST_FILTER=test_dump_scenarios $(MAKE) --no-print-directory DUT=$$d \
+	    SIM_BUILD=sim_build_$$d > traces_$$d.log 2>&1 || { echo "FAIL $$d"; exit 1; }; \
+	done
+	@for d in 2 4; do \
+	  COCOTB_TEST_FILTER=test_dump_scenarios $(MAKE) --no-print-directory DUT=hold HOLD_D=$$d \
+	    HOLD_CONFIRM=1 SIM_BUILD=sim_build_hold_d$${d}_c1 > traces_hold_d$$d.log 2>&1 \
+	    || { echo "FAIL hold D=$$d"; exit 1; }; \
+	done
+	@grep -h "FAIL=" traces_*.log
 all-duts:
 	@status=0; for d in committed fixed cl run integ hold; do \
 	  $(MAKE) --no-print-directory DUT=$$d SIM_BUILD=sim_build_$$d > results_$$d.log 2>&1; rc=$$?; \

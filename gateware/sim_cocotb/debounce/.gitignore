@@ -1,3 +1,5 @@
 sim_build_*/
 results_*.log
 results.xml
+traces_*.json
+traces_*.log
